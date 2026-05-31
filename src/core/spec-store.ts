@@ -1,6 +1,5 @@
 // src/core/spec-store.ts
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { DEFAULT_SPEC } from '../domain/types';
@@ -9,8 +8,12 @@ export class SpecStore {
   constructor(private filePath: string) {}
 
   async read(): Promise<string> {
-    if (!existsSync(this.filePath)) return DEFAULT_SPEC;
-    return readFile(this.filePath, 'utf8');
+    try {
+      return await readFile(this.filePath, 'utf8');
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return DEFAULT_SPEC;
+      throw e;
+    }
   }
 
   async write(md: string): Promise<void> {
