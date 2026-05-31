@@ -25,6 +25,11 @@ export function createApp(session: Session): Hono {
         void stream.writeSSE({ event, data: JSON.stringify(data) });
       });
       stream.onAbort(() => unsub());
+      // onAbort is not retroactive: if the client already disconnected, clean up now.
+      if (stream.aborted) {
+        unsub();
+        return;
+      }
 
       while (!stream.aborted) {
         await stream.sleep(30_000);
