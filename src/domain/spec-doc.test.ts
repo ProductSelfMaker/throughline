@@ -6,6 +6,7 @@ import {
   parseOpenQuestions,
   ensureFeatureIds,
   featureId,
+  parseSpec,
 } from './spec-doc';
 
 const SPEC = `---
@@ -60,5 +61,19 @@ describe('ensureFeatureIds', () => {
     expect(once).toContain(`- [ ] 소셜 로그인 <!-- id: ${featureId('소셜 로그인')} -->`);
     expect(once).toContain('- [x] 대시보드 <!-- id: feat-keep -->');
     expect(ensureFeatureIds(once)).toBe(once);
+  });
+});
+
+describe('parseSpec', () => {
+  it('returns features, open questions, and headings together', () => {
+    const parsed = parseSpec(SPEC);
+    expect(parsed.headings).toEqual([
+      '## 🎯 요약',
+      '## ✅ 핵심 기능',
+      '## 🟡 미정 / 열린 질문',
+      '## 인증',
+    ]);
+    expect(parsed.openQuestions).toEqual(['결제 수단은?', '무료 한도는?']);
+    expect(parsed.features.map((f) => f.text)).toEqual(['소셜 로그인', '대시보드']);
   });
 });
