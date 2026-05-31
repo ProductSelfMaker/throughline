@@ -13,7 +13,7 @@ function abortControllerFor(signal?: AbortSignal): AbortController | undefined {
   if (!signal) return undefined;
   const controller = new AbortController();
   if (signal.aborted) controller.abort();
-  else signal.addEventListener('abort', () => controller.abort());
+  else signal.addEventListener('abort', () => controller.abort(), { once: true });
   return controller;
 }
 

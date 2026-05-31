@@ -24,7 +24,10 @@ export class SpecStore {
   /** Calls onChange(newContent) when the file is modified externally. Returns an unsubscribe fn. */
   watch(onChange: (md: string) => void): () => void {
     const w: FSWatcher = chokidar.watch(this.filePath, { ignoreInitial: true });
-    w.on('change', async () => onChange(await this.read()));
+    // Best-effort: never let a read/callback rejection escape as an unhandled rejection.
+    w.on('change', () => {
+      this.read().then(onChange).catch(() => {});
+    });
     return () => void w.close();
   }
 }

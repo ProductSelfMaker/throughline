@@ -61,4 +61,25 @@ describe('ScribeEngine.runNow', () => {
     expect(rejected).toBe(true);
     expect(await store.read()).toBe('## 🎯 요약\n원본\n');
   });
+
+  it('returns null and emits "rejected" with the message when the runner throws', async () => {
+    const store = new SpecStore(join(dir, 'spec.md'));
+    await store.write('## 🎯 요약\n원본\n');
+    const throwingRunner = {
+      converse: async () => '',
+      scribe: async () => {
+        throw new Error('network down');
+      },
+    };
+    const engine = new ScribeEngine(store, throwingRunner);
+
+    let errors: string[] | undefined;
+    engine.on('rejected', (e: string[]) => (errors = e));
+
+    const result = await engine.runNow([{ role: 'user', content: 'x' }]);
+
+    expect(result).toBeNull();
+    expect(errors).toEqual(['network down']);
+    expect(await store.read()).toBe('## 🎯 요약\n원본\n');
+  });
 });
