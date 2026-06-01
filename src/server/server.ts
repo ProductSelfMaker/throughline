@@ -28,7 +28,14 @@ const app = createApp(session);
 
 // Lazily spawn one terminal PTY shared across (re)connections.
 let terminal: TerminalSession | null = null;
-const getTerminal = () => (terminal ??= new TerminalSession(spawnNodePty({ cwd })));
+const getTerminal = () => {
+  if (!terminal) {
+    const t = new TerminalSession(spawnNodePty({ cwd }));
+    t.onExit(() => { terminal = null; }); // next reconnect spawns a fresh shell
+    terminal = t;
+  }
+  return terminal;
+};
 const injectWebSocket = setupTerminalWs(app, getTerminal);
 
 if (existsSync(join(cwd, 'dist'))) {

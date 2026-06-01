@@ -26,7 +26,13 @@ export function setupTerminalWs(app: Hono, getTerminal: () => TerminalSession) {
       return {
         onOpen(_evt, ws) {
           ws.send(JSON.stringify({ type: 'data', data: session.snapshot() }));
-          unsub = session.subscribe((d) => ws.send(JSON.stringify({ type: 'data', data: d })));
+          if (session.isExited) {
+            ws.send(JSON.stringify({ type: 'exit' }));
+            return;
+          }
+          const unsubData = session.subscribe((d) => ws.send(JSON.stringify({ type: 'data', data: d })));
+          const unsubExit = session.onExit(() => ws.send(JSON.stringify({ type: 'exit' })));
+          unsub = () => { unsubData(); unsubExit(); };
         },
         onMessage(evt) {
           handleTerminalMessage(session, evt.data.toString());

@@ -52,4 +52,24 @@ describe('TerminalSession', () => {
     s.kill();
     expect(pty.killed).toBe(true);
   });
+
+  it('notifies onExit subscribers and stops after unsubscribe', () => {
+    const pty = new FakePty();
+    const s = new TerminalSession(pty);
+    let count = 0;
+    const off = s.onExit(() => { count++; });
+    off();
+    pty.exit();
+    expect(count).toBe(0);
+    const s2 = new TerminalSession(new FakePty());
+    // a fresh session whose exit IS observed:
+    const pty2 = new FakePty();
+    const s3 = new TerminalSession(pty2);
+    let fired = false;
+    s3.onExit(() => { fired = true; });
+    pty2.exit();
+    expect(fired).toBe(true);
+    expect(s3.isExited).toBe(true);
+    void s2;
+  });
 });

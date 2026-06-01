@@ -9,10 +9,11 @@ export interface Pty {
 
 const DEFAULT_CAP = 64 * 1024;
 
-/** Wraps a PTY: keeps a bounded scrollback buffer and fans output to subscribers. */
+/** Wraps a PTY: keeps a bounded scrollback buffer and fans output/exit to subscribers. */
 export class TerminalSession {
   private buffer = '';
   private subscribers = new Set<(d: string) => void>();
+  private exitCbs = new Set<() => void>();
   private exited = false;
 
   constructor(private pty: Pty, private cap = DEFAULT_CAP) {
@@ -22,6 +23,7 @@ export class TerminalSession {
     });
     pty.onExit(() => {
       this.exited = true;
+      for (const c of this.exitCbs) c();
     });
   }
 
@@ -31,6 +33,12 @@ export class TerminalSession {
   subscribe(cb: (d: string) => void): () => void {
     this.subscribers.add(cb);
     return () => { this.subscribers.delete(cb); };
+  }
+
+  /** Notified when the PTY exits. Returns an unsubscribe fn. */
+  onExit(cb: () => void): () => void {
+    this.exitCbs.add(cb);
+    return () => { this.exitCbs.delete(cb); };
   }
 
   write(data: string): void { this.pty.write(data); }

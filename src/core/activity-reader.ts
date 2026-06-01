@@ -101,11 +101,4 @@ export class ActivityReader {
       newState: { sessionFile, byteOffset: consumedEnd, lastDiff: gitDiff },
     };
   }
-
-  /** Full parsed transcript of the active session (for the read-only viewer). */
-  async readFullTranscript(): Promise<TranscriptEntry[]> {
-    const sessionFile = await this.activeSession();
-    if (!sessionFile) return [];
-    return parseEntries(await readFile(sessionFile, 'utf8'));
-  }
 }
