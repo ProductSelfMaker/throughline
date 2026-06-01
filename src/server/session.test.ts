@@ -1,71 +1,44 @@
 // src/server/session.test.ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SpecStore } from '../core/spec-store';
+import { ActivityReader } from '../core/activity-reader';
 import { FakeAgentRunner } from '../agent/fake-runner';
 import { Session } from './session';
 
 let dir: string;
-let session: Session;
+let home: string;
+let session: Session | undefined;
+const CWD = '/Users/u/Developer/Demo';
+
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'throughline-'));
+  dir = await mkdtemp(join(tmpdir(), 'tl-'));
+  home = await mkdtemp(join(tmpdir(), 'tl-home-'));
+  await mkdir(join(home, '.claude', 'projects', '-Users-u-Developer-Demo'), { recursive: true });
 });
 afterEach(async () => {
-  session?.close();
+  session?.stop();
   await rm(dir, { recursive: true, force: true });
+  await rm(home, { recursive: true, force: true });
 });
 
-const VALID = `## 🎯 요약
-앱
-
-## ✅ 핵심 기능
-- [ ] 소셜 로그인
-
-## 🟡 미정 / 열린 질문
-- 결제?
-`;
-
 describe('Session', () => {
-  it('streams converse tokens, records the transcript, and on flush scribes + broadcasts', async () => {
-    const store = new SpecStore(join(dir, 'spec.md'));
-    const runner = new FakeAgentRunner({ converseReply: 'hello', scribeReply: VALID });
-    session = new Session({ store, runner, debounceMs: 1000 });
-
-    const events: { event: string; data: unknown }[] = [];
-    session.broadcaster.subscribe((event, data) => events.push({ event, data }));
-
-    const updated = new Promise<void>((resolve) =>
-      session.engine.once('updated', () => resolve()),
-    );
-
-    const tokens: string[] = [];
-    const reply = await session.sendUserMessage('hi', (t) => tokens.push(t));
-
-    expect(reply).toBe('hello');
-    expect(tokens.join('')).toBe('hello');
-    expect(session.transcript).toEqual([
-      { role: 'user', content: 'hi' },
-      { role: 'assistant', content: 'hello' },
-    ]);
-
-    session.flush();
-    await updated;
-
-    expect(await store.read()).toContain('- [ ] 소셜 로그인 <!-- id: feat-');
-    expect(events.some((e) => e.event === 'spec-updated')).toBe(true);
+  it('readTranscript returns the parsed active session', async () => {
+    const sess = join(home, '.claude', 'projects', '-Users-u-Developer-Demo', 's.jsonl');
+    await writeFile(sess, JSON.stringify({ type: 'user', message: { role: 'user', content: '안녕' } }) + '\n');
+    const reader = new ActivityReader(CWD, { home, runGitDiff: async () => '' });
+    session = new Session({ store: new SpecStore(join(dir, 'spec.md')), runner: new FakeAgentRunner(), reader, cwd: dir });
+    expect(await session.readTranscript()).toEqual([{ role: 'user', text: '안녕' }]);
   });
 
-  it('generateFlow returns the runner completion for the current spec', async () => {
+  it('generateFlow delegates to the runner with the flow prompt', async () => {
     const store = new SpecStore(join(dir, 'spec.md'));
     await store.write('## ✅ 핵심 기능\n- [ ] 소셜 로그인\n');
-    const runner = new FakeAgentRunner({
-      completeReply: (prompt) =>
-        prompt.includes('소셜 로그인') ? 'flowchart TD\n  로그인-->홈' : 'EMPTY',
-    });
-    session = new Session({ store, runner });
-
-    expect(await session.generateFlow()).toBe('flowchart TD\n  로그인-->홈');
+    const runner = new FakeAgentRunner({ completeReply: (p) => (p.includes('소셜 로그인') ? 'flowchart TD\n A-->B' : 'X') });
+    const reader = new ActivityReader(CWD, { home, runGitDiff: async () => '' });
+    session = new Session({ store, runner, reader, cwd: dir });
+    expect(await session.generateFlow()).toBe('flowchart TD\n A-->B');
   });
 });

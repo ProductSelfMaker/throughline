@@ -1,85 +1,65 @@
 // src/server/app.test.ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SpecStore } from '../core/spec-store';
+import { ActivityReader } from '../core/activity-reader';
 import { FakeAgentRunner } from '../agent/fake-runner';
 import { Session } from './session';
 import { createApp } from './app';
 
 let dir: string;
-let session: Session;
+let home: string;
+let session: Session | undefined;
+const CWD = '/Users/u/Developer/Demo';
+const projDir = '-Users-u-Developer-Demo';
+
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'throughline-'));
+  dir = await mkdtemp(join(tmpdir(), 'tl-'));
+  home = await mkdtemp(join(tmpdir(), 'tl-home-'));
+  await mkdir(join(home, '.claude', 'projects', projDir), { recursive: true });
 });
 afterEach(async () => {
-  session?.close();
+  session?.stop();
   await rm(dir, { recursive: true, force: true });
+  await rm(home, { recursive: true, force: true });
 });
 
-const VALID = `## 🎯 요약
-앱
+function mkSession(runner = new FakeAgentRunner()): Session {
+  const reader = new ActivityReader(CWD, { home, runGitDiff: async () => '' });
+  return new Session({ store: new SpecStore(join(dir, 'spec.md')), runner, reader, cwd: dir });
+}
 
-## ✅ 핵심 기능
-- [ ] 소셜 로그인
-
-## 🟡 미정 / 열린 질문
-- 결제?
-`;
-
-describe('createApp POST /api/chat', () => {
-  it('streams the converse reply and triggers a scribe that updates the store', async () => {
-    const store = new SpecStore(join(dir, 'spec.md'));
-    const runner = new FakeAgentRunner({ converseReply: 'hi there', scribeReply: VALID });
-    session = new Session({ store, runner, debounceMs: 1000 });
-    const app = createApp(session);
-
-    const updated = new Promise<void>((resolve) =>
-      session.engine.once('updated', () => resolve()),
+describe('GET /api/transcript', () => {
+  it('returns the parsed transcript entries', async () => {
+    await writeFile(
+      join(home, '.claude', 'projects', projDir, 's.jsonl'),
+      JSON.stringify({ type: 'user', message: { role: 'user', content: '안녕' } }) + '\n',
     );
-
-    const res = await app.request('/api/chat', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message: '로그인 소셜만' }),
-    });
-
+    session = mkSession();
+    const res = await createApp(session).request('/api/transcript');
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe('hi there');
-
-    session.flush();
-    await updated;
-    expect(await store.read()).toContain('## ✅ 핵심 기능');
+    expect(await res.json()).toEqual({ entries: [{ role: 'user', text: '안녕' }] });
   });
 });
 
-describe('createApp GET /api/flow', () => {
+describe('GET /api/flow', () => {
   it('returns { mermaid } from the session', async () => {
     const store = new SpecStore(join(dir, 'spec.md'));
     await store.write('## ✅ 핵심 기능\n- [ ] 소셜 로그인\n');
-    const runner = new FakeAgentRunner({ completeReply: 'flowchart TD\n  A-->B' });
-    session = new Session({ store, runner });
-    const app = createApp(session);
-
-    const res = await app.request('/api/flow');
+    const reader = new ActivityReader(CWD, { home, runGitDiff: async () => '' });
+    session = new Session({ store, runner: new FakeAgentRunner({ completeReply: 'flowchart TD\n A-->B' }), reader, cwd: dir });
+    const res = await createApp(session).request('/api/flow');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ mermaid: 'flowchart TD\n  A-->B' });
+    expect(await res.json()).toEqual({ mermaid: 'flowchart TD\n A-->B' });
   });
 
-  it('returns { error } with 500 when generation throws', async () => {
-    const store = new SpecStore(join(dir, 'spec.md'));
-    const runner = {
-      converse: async () => '',
-      scribe: async () => '',
-      complete: async () => {
-        throw new Error('model down');
-      },
-    };
-    session = new Session({ store, runner });
-    const app = createApp(session);
-
-    const res = await app.request('/api/flow');
+  it('returns { error } 500 when generation throws', async () => {
+    const reader = new ActivityReader(CWD, { home, runGitDiff: async () => '' });
+    const runner = { converse: async () => '', scribe: async () => '', complete: async () => { throw new Error('model down'); } };
+    session = new Session({ store: new SpecStore(join(dir, 'spec.md')), runner, reader, cwd: dir });
+    const res = await createApp(session).request('/api/flow');
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'model down' });
   });

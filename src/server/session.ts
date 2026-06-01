@@ -1,49 +1,44 @@
 // src/server/session.ts
-import { Message, AgentRunner, ScribeResult } from '../domain/types';
-import { buildFlowPrompt } from '../domain/flow-prompt';
+import chokidar, { type FSWatcher } from 'chokidar';
+import { AgentRunner, ScribeResult } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
-import { ScribeEngine } from '../core/scribe-engine';
+import { ActivityReader } from '../core/activity-reader';
+import { SyncEngine } from '../core/sync-engine';
 import { Debouncer } from './debouncer';
 import { Broadcaster } from './broadcaster';
+import { buildFlowPrompt } from '../domain/flow-prompt';
+import { TranscriptEntry } from '../core/transcript';
 
 export interface SessionDeps {
   store: SpecStore;
   runner: AgentRunner;
+  reader: ActivityReader;
+  cwd: string;
   debounceMs?: number;
 }
 
-/**
- * The in-memory state of one Throughline editing session: the conversation,
- * the scribe engine, the debounced live loop, and the broadcaster that fans
- * spec updates out to connected browsers.
- */
+/** The workspace: watches the user's real activity and keeps the living spec current. */
 export class Session {
-  readonly transcript: Message[] = [];
-  readonly engine: ScribeEngine;
   readonly broadcaster = new Broadcaster();
+  readonly engine: SyncEngine;
 
   private store: SpecStore;
   private runner: AgentRunner;
+  private reader: ActivityReader;
+  private cwd: string;
   private debouncer: Debouncer;
-  private unwatch: () => void;
-  private lastMd: string | null = null;
+  private watcher: FSWatcher | null = null;
 
   constructor(deps: SessionDeps) {
     this.store = deps.store;
     this.runner = deps.runner;
-    this.engine = new ScribeEngine(deps.store, deps.runner);
-    this.debouncer = new Debouncer(deps.debounceMs ?? 1500);
+    this.reader = deps.reader;
+    this.cwd = deps.cwd;
+    this.engine = new SyncEngine(deps.store, deps.runner, deps.reader);
+    this.debouncer = new Debouncer(deps.debounceMs ?? 10_000);
 
     this.engine.on('updated', (r: ScribeResult) => {
-      this.lastMd = r.md;
       this.broadcaster.broadcast('spec-updated', r);
-    });
-
-    // Reflect EXTERNAL edits (user editing spec.md in their own editor).
-    // Skip the echo of our own scribe writes by comparing against lastMd.
-    this.unwatch = this.store.watch((md) => {
-      if (md === this.lastMd) return;
-      this.broadcaster.broadcast('spec-updated', { md, changedLines: [] });
     });
   }
 
@@ -51,28 +46,37 @@ export class Session {
     return this.store.read();
   }
 
-  /** Generate a fresh mermaid user-flow from the current spec (one-shot AI call). */
+  readTranscript(): Promise<TranscriptEntry[]> {
+    return this.reader.readFullTranscript();
+  }
+
   async generateFlow(signal?: AbortSignal): Promise<string> {
     const spec = await this.readSpec();
     return this.runner.complete(buildFlowPrompt(spec), signal);
   }
 
-  /** Append a user turn, stream the assistant reply, then schedule a debounced scribe. */
-  async sendUserMessage(content: string, onToken: (t: string) => void): Promise<string> {
-    this.transcript.push({ role: 'user', content });
-    const reply = await this.runner.converse(this.transcript, onToken);
-    this.transcript.push({ role: 'assistant', content: reply });
-    this.debouncer.schedule(() => void this.engine.runNow(this.transcript));
-    return reply;
+  /** Begin watching the repo + Claude Code transcript; debounce → sync. */
+  start(): void {
+    if (this.watcher) return;
+    // Watch both the repo (code changes) and the Claude Code transcript dir
+    // (pure conversation, no file save) so either kind of activity triggers a sync.
+    this.watcher = chokidar.watch([this.cwd, this.reader.projectDir], {
+      ignoreInitial: true,
+      ignored: (p: string) =>
+        /(^|\/)(\.git|node_modules|dist|docs|\.superpowers)(\/|$)/.test(p) || p.endsWith('/spec.md'),
+    });
+    const trigger = () => this.debouncer.schedule(() => this.syncAndBroadcastTranscript());
+    this.watcher.on('all', trigger);
   }
 
-  /** Run any pending scribe immediately (used at shutdown and in tests). */
-  flush(): void {
-    this.debouncer.flush();
+  private async syncAndBroadcastTranscript(): Promise<void> {
+    await this.engine.syncNow();
+    this.broadcaster.broadcast('transcript-updated', await this.readTranscript());
   }
 
-  close(): void {
+  stop(): void {
     this.debouncer.cancel();
-    this.unwatch();
+    void this.watcher?.close();
+    this.watcher = null;
   }
 }
