@@ -1,7 +1,7 @@
 // src/web/App.tsx
 import { useCallback, useEffect, useState } from 'react';
-import { subscribeSpec } from './api';
-import { ChatPane } from './ChatPane';
+import { subscribeEvents } from './api';
+import { TranscriptView } from './TranscriptView';
 import { ViewToolbar, type ViewId } from './ViewToolbar';
 import { ResizableDivider } from './ResizableDivider';
 import { RightPane } from './RightPane';
@@ -22,10 +22,12 @@ export function App() {
 
   useEffect(
     () =>
-      subscribeSpec((u) => {
-        setMd(u.md);
-        setChangedLines(u.changedLines);
-        setSpecRevision((r) => r + 1);
+      subscribeEvents({
+        onSpec: (u) => {
+          setMd(u.md);
+          setChangedLines(u.changedLines);
+          setSpecRevision((r) => r + 1);
+        },
       }),
     [],
   );
@@ -45,18 +47,13 @@ export function App() {
   return (
     <div className="app">
       <div className="chat-col" style={open ? { flexBasis: `${100 - splitWidth}%` } : { flex: 1 }}>
-        <ChatPane />
+        <TranscriptView />
       </div>
       {open ? (
         <>
           <ResizableDivider onResize={onResize} />
           <div className="view-col" style={{ flexBasis: `${splitWidth}%` }}>
-            <RightPane
-              activeView={activeView}
-              md={md}
-              changedLines={changedLines}
-              specRevision={specRevision}
-            />
+            <RightPane activeView={activeView} md={md} changedLines={changedLines} specRevision={specRevision} />
           </div>
         </>
       ) : null}
