@@ -9,8 +9,9 @@
     "test:watch": "vitest",
     "scribe": "tsx src/cli/scribe-cli.ts",
     "server": "tsx src/server/server.ts",
+    "dev:server": "OPEN=0 tsx src/server/server.ts",
     "dev:web": "vite",
-    "dev": "concurrently -k -n server,web \"OPEN=0 npm:server\" \"npm:dev:web\"",
+    "dev": "concurrently -k -n server,web npm:dev:server npm:dev:web",
     "build:web": "vite build",
     "start": "npm run build:web && tsx src/server/server.ts"
   },
