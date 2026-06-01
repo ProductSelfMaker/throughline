@@ -7,6 +7,12 @@ export default defineConfig({
   // '^/api/' (regex) matches real API routes like /api/transcript but NOT the
   // frontend's own /api.ts module — a plain '/api' key proxies /api.ts to the
   // backend and breaks the module graph (white screen) in dev.
-  server: { port: 5173, proxy: { '^/api/': 'http://localhost:5174' } },
+  server: {
+    port: 5173,
+    proxy: {
+      '^/api/': 'http://localhost:5174',
+      '/ws': { target: 'http://localhost:5174', ws: true },
+    },
+  },
   build: { outDir: '../../dist', emptyOutDir: true },
 });
