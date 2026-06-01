@@ -38,5 +38,14 @@ export function createApp(session: Session): Hono {
     });
   });
 
+  app.get('/api/flow', async (c) => {
+    try {
+      const mermaid = await session.generateFlow();
+      return c.json({ mermaid });
+    } catch (err) {
+      return c.json({ error: (err as Error)?.message ?? String(err) }, 500);
+    }
+  });
+
   return app;
 }
