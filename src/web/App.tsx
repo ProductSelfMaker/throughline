@@ -1,7 +1,7 @@
 // src/web/App.tsx
 import { useCallback, useEffect, useState } from 'react';
 import { subscribeEvents } from './api';
-import { TranscriptView } from './TranscriptView';
+import { Terminal } from './Terminal';
 import { ViewToolbar, type ViewId } from './ViewToolbar';
 import { ResizableDivider } from './ResizableDivider';
 import { RightPane } from './RightPane';
@@ -47,7 +47,7 @@ export function App() {
   return (
     <div className="app">
       <div className="chat-col" style={open ? { flexBasis: `${100 - splitWidth}%` } : { flex: 1 }}>
-        <TranscriptView />
+        <Terminal />
       </div>
       {open ? (
         <>
