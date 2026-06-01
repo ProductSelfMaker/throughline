@@ -1,6 +1,6 @@
 // src/server/app.test.ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SpecStore } from '../core/spec-store';
@@ -13,35 +13,15 @@ let dir: string;
 let home: string;
 let session: Session | undefined;
 const CWD = '/Users/u/Developer/Demo';
-const projDir = '-Users-u-Developer-Demo';
-
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'tl-'));
   home = await mkdtemp(join(tmpdir(), 'tl-home-'));
-  await mkdir(join(home, '.claude', 'projects', projDir), { recursive: true });
+  await mkdir(join(home, '.claude', 'projects', '-Users-u-Developer-Demo'), { recursive: true });
 });
 afterEach(async () => {
   session?.stop();
   await rm(dir, { recursive: true, force: true });
   await rm(home, { recursive: true, force: true });
-});
-
-function mkSession(runner = new FakeAgentRunner()): Session {
-  const reader = new ActivityReader(CWD, { home, runGitDiff: async () => '' });
-  return new Session({ store: new SpecStore(join(dir, 'spec.md')), runner, reader, cwd: dir });
-}
-
-describe('GET /api/transcript', () => {
-  it('returns the parsed transcript entries', async () => {
-    await writeFile(
-      join(home, '.claude', 'projects', projDir, 's.jsonl'),
-      JSON.stringify({ type: 'user', message: { role: 'user', content: '안녕' } }) + '\n',
-    );
-    session = mkSession();
-    const res = await createApp(session).request('/api/transcript');
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ entries: [{ role: 'user', text: '안녕' }] });
-  });
 });
 
 describe('GET /api/flow', () => {

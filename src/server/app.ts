@@ -6,10 +6,6 @@ import { Session } from './session';
 export function createApp(session: Session): Hono {
   const app = new Hono();
 
-  app.get('/api/transcript', async (c) => {
-    return c.json({ entries: await session.readTranscript() });
-  });
-
   app.get('/api/events', (c) => {
     return streamSSE(c, async (stream) => {
       const current = await session.readSpec();

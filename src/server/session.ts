@@ -7,7 +7,6 @@ import { SyncEngine } from '../core/sync-engine';
 import { Debouncer } from './debouncer';
 import { Broadcaster } from './broadcaster';
 import { buildFlowPrompt } from '../domain/flow-prompt';
-import { TranscriptEntry } from '../core/transcript';
 
 export interface SessionDeps {
   store: SpecStore;
@@ -46,10 +45,6 @@ export class Session {
     return this.store.read();
   }
 
-  readTranscript(): Promise<TranscriptEntry[]> {
-    return this.reader.readFullTranscript();
-  }
-
   async generateFlow(signal?: AbortSignal): Promise<string> {
     const spec = await this.readSpec();
     return this.runner.complete(buildFlowPrompt(spec), signal);
@@ -65,13 +60,8 @@ export class Session {
       ignored: (p: string) =>
         /(^|\/)(\.git|node_modules|dist|docs|\.superpowers)(\/|$)/.test(p) || p.endsWith('/spec.md'),
     });
-    const trigger = () => this.debouncer.schedule(() => this.syncAndBroadcastTranscript());
+    const trigger = () => this.debouncer.schedule(() => { void this.engine.syncNow(); });
     this.watcher.on('all', trigger);
-  }
-
-  private async syncAndBroadcastTranscript(): Promise<void> {
-    await this.engine.syncNow();
-    this.broadcaster.broadcast('transcript-updated', await this.readTranscript());
   }
 
   stop(): void {

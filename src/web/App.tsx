@@ -1,6 +1,6 @@
 // src/web/App.tsx
 import { useCallback, useEffect, useState } from 'react';
-import { subscribeEvents } from './api';
+import { subscribeSpec } from './api';
 import { Terminal } from './Terminal';
 import { ViewToolbar, type ViewId } from './ViewToolbar';
 import { ResizableDivider } from './ResizableDivider';
@@ -22,12 +22,10 @@ export function App() {
 
   useEffect(
     () =>
-      subscribeEvents({
-        onSpec: (u) => {
-          setMd(u.md);
-          setChangedLines(u.changedLines);
-          setSpecRevision((r) => r + 1);
-        },
+      subscribeSpec((u) => {
+        setMd(u.md);
+        setChangedLines(u.changedLines);
+        setSpecRevision((r) => r + 1);
       }),
     [],
   );
