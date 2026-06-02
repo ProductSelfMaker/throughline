@@ -8,6 +8,12 @@ import { PreviewView } from './PreviewView';
 import { Icons } from './icons';
 import type { ViewId } from './ViewRail';
 
+/** Drop a leading YAML frontmatter block so it doesn't render as a stray heading. */
+function stripFrontmatter(md: string): string {
+  const m = /^\s*---\n[\s\S]*?\n---\s*\n?/.exec(md);
+  return m ? md.slice(m[0].length) : md;
+}
+
 function DocView({ md }: { md: string }) {
   return (
     <>
@@ -18,9 +24,9 @@ function DocView({ md }: { md: string }) {
       </div>
       <div className="tl-doc">
         <div className="tl-doc-inner">
-          <div className="tl-doc-kicker">스펙 · 자동 생성</div>
+          <div className="tl-doc-kicker">PRD · 자동 생성</div>
           {md.trim() ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripFrontmatter(md)}</ReactMarkdown>
           ) : (
             <p className="tl-doc-empty">대화를 시작하면 스펙이 여기에 자동으로 정리됩니다.</p>
           )}

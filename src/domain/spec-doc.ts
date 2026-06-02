@@ -1,5 +1,5 @@
 // src/domain/spec-doc.ts
-import { FeatureItem, ParsedSpec } from './types';
+import { FeatureItem, ParsedSpec, REQUIREMENTS_HEADING, OPEN_QUESTIONS_HEADING } from './types';
 
 const FEATURE_RE =
   /^- \[( |x|X)\]\s+(.*?)(?:\s*<!--\s*id:\s*([\w-]+)\s*-->)?\s*$/;
@@ -35,7 +35,7 @@ function sectionLines(md: string, heading: string): string[] {
 
 export function parseFeatures(md: string): FeatureItem[] {
   const items: FeatureItem[] = [];
-  for (const line of sectionLines(md, '## ✅ 핵심 기능')) {
+  for (const line of sectionLines(md, REQUIREMENTS_HEADING)) {
     const m = FEATURE_RE.exec(line.trim());
     if (!m) continue;
     const text = m[2].trim();
@@ -49,7 +49,7 @@ export function parseFeatures(md: string): FeatureItem[] {
 }
 
 export function parseOpenQuestions(md: string): string[] {
-  return sectionLines(md, '## 🟡 미정 / 열린 질문')
+  return sectionLines(md, OPEN_QUESTIONS_HEADING)
     .map((l) => l.trim())
     .filter((l) => l.startsWith('- '))
     .map((l) => l.slice(2).trim());
@@ -61,7 +61,7 @@ export function ensureFeatureIds(md: string): string {
     .split('\n')
     .map((line) => {
       if (/^##\s+/.test(line)) {
-        inFeatures = line.trim() === '## ✅ 핵심 기능';
+        inFeatures = line.trim() === REQUIREMENTS_HEADING;
         return line;
       }
       if (!inFeatures) return line;

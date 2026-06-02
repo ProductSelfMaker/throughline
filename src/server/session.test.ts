@@ -14,7 +14,7 @@ let session: Session | undefined;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'tl-')); });
 afterEach(async () => { session?.stop(); await rm(dir, { recursive: true, force: true }); });
 
-const VALID = `## 🎯 요약\n앱\n\n## ✅ 핵심 기능\n- [x] 소셜 로그인\n\n## 🟡 미정 / 열린 질문\n- 결제?\n`;
+const VALID = `## 📌 개요\n앱\n\n## 🎯 목표\n- 빠름\n\n## ✅ 기능 요구사항\n- [x] 소셜 로그인\n\n## ❓ 미해결 질문\n- 결제?\n`;
 
 describe('Session', () => {
   it('init restores the persisted conversation', async () => {

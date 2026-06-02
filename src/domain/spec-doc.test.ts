@@ -13,14 +13,17 @@ const SPEC = `---
 title: Demo
 ---
 
-## 🎯 요약
-한 줄 요약입니다.
+## 📌 개요
+한 줄 개요입니다.
 
-## ✅ 핵심 기능
+## 🎯 목표
+- 빠른 로그인
+
+## ✅ 기능 요구사항
 - [ ] 소셜 로그인
 - [x] 대시보드 <!-- id: feat-keep -->
 
-## 🟡 미정 / 열린 질문
+## ❓ 미해결 질문
 - 결제 수단은?
 - 무료 한도는?
 
@@ -31,9 +34,10 @@ title: Demo
 describe('getHeadings', () => {
   it('returns every ## heading, trimmed', () => {
     expect(getHeadings(SPEC)).toEqual([
-      '## 🎯 요약',
-      '## ✅ 핵심 기능',
-      '## 🟡 미정 / 열린 질문',
+      '## 📌 개요',
+      '## 🎯 목표',
+      '## ✅ 기능 요구사항',
+      '## ❓ 미해결 질문',
       '## 인증',
     ]);
   });
@@ -50,13 +54,13 @@ describe('parseFeatures', () => {
 });
 
 describe('parseOpenQuestions', () => {
-  it('parses the 미정 bullets', () => {
+  it('parses the 미해결 질문 bullets', () => {
     expect(parseOpenQuestions(SPEC)).toEqual(['결제 수단은?', '무료 한도는?']);
   });
 });
 
 describe('ensureFeatureIds', () => {
-  it('appends a deterministic id to feature lines lacking one, and is idempotent', () => {
+  it('appends a deterministic id to requirement lines lacking one, and is idempotent', () => {
     const once = ensureFeatureIds(SPEC);
     expect(once).toContain(`- [ ] 소셜 로그인 <!-- id: ${featureId('소셜 로그인')} -->`);
     expect(once).toContain('- [x] 대시보드 <!-- id: feat-keep -->');
@@ -68,9 +72,10 @@ describe('parseSpec', () => {
   it('returns features, open questions, and headings together', () => {
     const parsed = parseSpec(SPEC);
     expect(parsed.headings).toEqual([
-      '## 🎯 요약',
-      '## ✅ 핵심 기능',
-      '## 🟡 미정 / 열린 질문',
+      '## 📌 개요',
+      '## 🎯 목표',
+      '## ✅ 기능 요구사항',
+      '## ❓ 미해결 질문',
       '## 인증',
     ]);
     expect(parsed.openQuestions).toEqual(['결제 수단은?', '무료 한도는?']);

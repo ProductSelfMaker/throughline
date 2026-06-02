@@ -46,22 +46,32 @@ export interface AgentRunner {
   complete(prompt: string, signal?: AbortSignal): Promise<string>;
 }
 
-/** The three fixed "spine" sections that must always be present (hybrid structure). */
+/** PRD spine sections. A lean, always-present backbone; the scribe grows other
+ *  `## <topic>` sections freely beneath it. Missing ones are self-healed (not
+ *  rejected) on update — see ensureSpine. */
+export const OVERVIEW_HEADING = '## 📌 개요';
+export const GOALS_HEADING = '## 🎯 목표';
+export const REQUIREMENTS_HEADING = '## ✅ 기능 요구사항';
+export const OPEN_QUESTIONS_HEADING = '## ❓ 미해결 질문';
+
 export const SPINE_HEADINGS = [
-  '## 🎯 요약',
-  '## ✅ 핵심 기능',
-  '## 🟡 미정 / 열린 질문',
+  OVERVIEW_HEADING,
+  GOALS_HEADING,
+  REQUIREMENTS_HEADING,
+  OPEN_QUESTIONS_HEADING,
 ] as const;
 
-/** Scaffold used when no spec.md exists yet. */
+/** Scaffold used when no spec.md exists yet — an empty PRD skeleton. */
 export const DEFAULT_SPEC = `---
 title: Untitled
 updated:
 ---
 
-## 🎯 요약
+${OVERVIEW_HEADING}
 
-## ✅ 핵심 기능
+${GOALS_HEADING}
 
-## 🟡 미정 / 열린 질문
+${REQUIREMENTS_HEADING}
+
+${OPEN_QUESTIONS_HEADING}
 `;
