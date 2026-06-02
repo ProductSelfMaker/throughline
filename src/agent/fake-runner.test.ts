@@ -3,11 +3,11 @@ import { describe, it, expect } from 'vitest';
 import { FakeAgentRunner } from './fake-runner';
 
 describe('FakeAgentRunner', () => {
-  it('streams the scripted converse reply char by char and returns the whole thing', async () => {
+  it('converse returns converseReply with no events when chatEvents is omitted', async () => {
     const runner = new FakeAgentRunner({ converseReply: 'hi' });
-    const tokens: string[] = [];
-    const full = await runner.converse([], (t) => tokens.push(t));
-    expect(tokens).toEqual(['h', 'i']);
+    const events: any[] = [];
+    const full = await runner.converse([], (e) => events.push(e));
+    expect(events).toEqual([]);
     expect(full).toBe('hi');
   });
 
@@ -26,5 +26,21 @@ describe('FakeAgentRunner', () => {
 
     const dynamic = new FakeAgentRunner({ completeReply: (p) => `len:${p.length}` });
     expect(await dynamic.complete('abc')).toBe('len:3');
+  });
+
+  it('converse emits scripted chat events and returns the text', async () => {
+    const runner = new FakeAgentRunner({
+      chatEvents: [
+        { type: 'tool', name: 'Edit', target: 'src/Login.tsx' },
+        { type: 'text', text: '로그인 추가했어요' },
+      ],
+    });
+    const events: any[] = [];
+    const reply = await runner.converse([{ role: 'user', content: '로그인' }], (e) => events.push(e));
+    expect(events).toEqual([
+      { type: 'tool', name: 'Edit', target: 'src/Login.tsx' },
+      { type: 'text', text: '로그인 추가했어요' },
+    ]);
+    expect(reply).toBe('로그인 추가했어요');
   });
 });

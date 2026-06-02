@@ -1,6 +1,6 @@
 // src/agent/claude-code-runner.ts
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { AgentRunner, Message } from '../domain/types';
+import { AgentRunner, ChatEvent, Message } from '../domain/types';
 import { buildScribePrompt } from '../domain/scribe-prompt';
 
 function transcriptToPrompt(transcript: Message[]): string {
@@ -24,16 +24,22 @@ function stripCodeFence(text: string): string {
   return fence ? fence[1] : trimmed;
 }
 
-async function collectAssistantText(
+function toolTarget(input: unknown): string {
+  if (input && typeof input === 'object') {
+    const o = input as Record<string, unknown>;
+    const v = o.file_path ?? o.path ?? o.command ?? o.pattern ?? o.url;
+    if (typeof v === 'string') return v.length > 60 ? v.slice(0, 60) + '…' : v;
+  }
+  return '';
+}
+
+async function streamChat(
   prompt: string,
   cwd: string | undefined,
-  onToken: ((t: string) => void) | undefined,
+  onEvent: (e: ChatEvent) => void,
   signal?: AbortSignal,
 ): Promise<string> {
   let full = '';
-  // Options.cwd and Options.abortController are both present in the 0.1.77 types.
-  // SDKAssistantMessage has: { type: 'assistant', message: BetaMessage }
-  // BetaMessage.content is BetaContentBlock[], where text blocks are { type: 'text', text: string }.
   for await (const msg of query({
     prompt,
     options: { cwd, abortController: abortControllerFor(signal) },
@@ -42,7 +48,9 @@ async function collectAssistantText(
       for (const block of msg.message.content) {
         if (block.type === 'text') {
           full += block.text;
-          onToken?.(block.text);
+          onEvent({ type: 'text', text: block.text });
+        } else if (block.type === 'tool_use') {
+          onEvent({ type: 'tool', name: block.name, target: toolTarget(block.input) });
         }
       }
     }
@@ -50,20 +58,23 @@ async function collectAssistantText(
   return full;
 }
 
+async function collectAssistantText(
+  prompt: string,
+  cwd: string | undefined,
+  signal?: AbortSignal,
+): Promise<string> {
+  return streamChat(prompt, cwd, () => {}, signal);
+}
+
 export class ClaudeCodeRunner implements AgentRunner {
   constructor(private options: { cwd?: string } = {}) {}
 
   converse(
     transcript: Message[],
-    onToken: (t: string) => void,
+    onEvent: (e: ChatEvent) => void,
     signal?: AbortSignal,
   ): Promise<string> {
-    return collectAssistantText(
-      transcriptToPrompt(transcript),
-      this.options.cwd,
-      onToken,
-      signal,
-    );
+    return streamChat(transcriptToPrompt(transcript), this.options.cwd, onEvent, signal);
   }
 
   async scribe(
@@ -74,14 +85,13 @@ export class ClaudeCodeRunner implements AgentRunner {
     const text = await collectAssistantText(
       buildScribePrompt(currentSpecMarkdown, transcript),
       this.options.cwd,
-      undefined,
       signal,
     );
     return stripCodeFence(text);
   }
 
   async complete(prompt: string, signal?: AbortSignal): Promise<string> {
-    const text = await collectAssistantText(prompt, this.options.cwd, undefined, signal);
+    const text = await collectAssistantText(prompt, this.options.cwd, signal);
     return stripCodeFence(text);
   }
 }

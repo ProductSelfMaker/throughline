@@ -25,11 +25,15 @@ export interface ScribeResult {
   changedLines: number[];
 }
 
+export type ChatEvent =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; name: string; target: string };
+
 export interface AgentRunner {
-  /** Streams a planning reply token-by-token; resolves with the full assistant text. */
+  /** Drives the user's Claude Code; streams text deltas and tool-use events; resolves with the full assistant text. */
   converse(
     transcript: Message[],
-    onToken: (t: string) => void,
+    onEvent: (e: ChatEvent) => void,
     signal?: AbortSignal,
   ): Promise<string>;
   /** One-shot: given the current spec + transcript, returns the full updated spec markdown. */

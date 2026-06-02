@@ -1,7 +1,7 @@
 // src/web/App.tsx
 import { useCallback, useEffect, useState } from 'react';
 import { subscribeSpec } from './api';
-import { Terminal } from './Terminal';
+import { ChatPane } from './ChatPane';
 import { ViewToolbar, type ViewId } from './ViewToolbar';
 import { ResizableDivider } from './ResizableDivider';
 import { RightPane } from './RightPane';
@@ -45,7 +45,7 @@ export function App() {
   return (
     <div className="app">
       <div className="chat-col" style={open ? { flexBasis: `${100 - splitWidth}%` } : { flex: 1 }}>
-        <Terminal />
+        <ChatPane />
       </div>
       {open ? (
         <>
