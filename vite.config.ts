@@ -11,7 +11,6 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '^/api/': 'http://localhost:5174',
-      '/ws': { target: 'http://localhost:5174', ws: true },
     },
   },
   build: { outDir: '../../dist', emptyOutDir: true },
