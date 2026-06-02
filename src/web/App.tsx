@@ -16,7 +16,7 @@ export function App() {
     <div className="tl" data-variant="cards" data-theme="light">
       <MainView activeView={activeView} md={md} />
       <ViewRail active={activeView} onToggle={setActiveView} />
-      <ScribeChat />
+      {activeView === 'doc' ? <ScribeChat /> : null}
     </div>
   );
 }

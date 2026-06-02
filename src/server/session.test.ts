@@ -11,9 +11,14 @@ import { ActivityBatch, ActivityReader, ScribeResult } from '../domain/types';
 const PRD = `## 📌 개요\n앱\n\n## 🎯 목표\n- 빠름\n\n## ✅ 기능 요구사항\n- [x] 소셜 로그인\n\n## ❓ 미해결 질문\n- 결제?\n`;
 
 class FakeReader implements ActivityReader {
-  constructor(private batch: ActivityBatch, private offsets: Record<string, number> = {}) {}
+  constructor(
+    private batch: ActivityBatch,
+    private offsets: Record<string, number> = {},
+    private recent: string = '',
+  ) {}
   async readNew(): Promise<ActivityBatch> { return this.batch; }
   async currentOffsets(): Promise<Record<string, number>> { return this.offsets; }
+  async readRecent(): Promise<string> { return this.recent; }
   watch(): () => void { return () => {}; }
 }
 const completer = (reply: string) => ({ complete: async () => reply });
@@ -52,6 +57,21 @@ describe('Session (observer)', () => {
     await updated;
     expect(await store.read()).toContain('- [x] 소셜 로그인 <!-- id: feat-');
     expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 42 });
+  });
+
+  it('rebuild resets the PRD from recent activity, advances the checkpoint, and broadcasts', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'prd.md'));
+    await store.write('## 📌 개요\n옛 내용\n');
+    const ingest = new IngestStore(dir);
+    const reader = new FakeReader({ excerpt: '', advanced: {} }, { '/x/s1.jsonl': 77 }, '사용자: 최근 작업');
+    session = new Session({ store, runner: completer(PRD), reader, ingest, cwd: dir, gitDiff: async () => '' });
+    const updated = new Promise<ScribeResult>((res) =>
+      session!.broadcaster.subscribe((ev, d) => { if (ev === 'spec-updated') res(d as ScribeResult); }));
+    await session.rebuild();
+    await updated;
+    expect(await store.read()).toContain('- [x] 소셜 로그인 <!-- id: feat-');
+    expect(await store.read()).not.toContain('옛 내용');
+    expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 77 });
   });
 
   it('curate applies an instruction and broadcasts', async () => {

@@ -12,6 +12,7 @@ import { ActivityReader } from '../domain/types';
 const idleReader: ActivityReader = {
   async readNew() { return { excerpt: '', advanced: {} }; },
   async currentOffsets() { return {}; },
+  async readRecent() { return ''; },
   watch() { return () => {}; },
 };
 
@@ -46,6 +47,15 @@ describe('POST /api/curate', () => {
     const res = await createApp(session).request('/api/curate', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ instruction: '리스크 추가' }),
     });
+    expect(await res.json()).toEqual({ ok: true });
+  });
+});
+
+describe('POST /api/rebuild', () => {
+  it('rebuilds and returns ok', async () => {
+    const PRD = `## 📌 개요\nX\n\n## 🎯 목표\n- a\n\n## ✅ 기능 요구사항\n- [ ] b\n\n## ❓ 미해결 질문\n- c\n`;
+    session = mk(PRD);
+    const res = await createApp(session).request('/api/rebuild', { method: 'POST' });
     expect(await res.json()).toEqual({ ok: true });
   });
 });

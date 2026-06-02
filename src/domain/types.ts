@@ -38,6 +38,8 @@ export interface ActivityReader {
   readNew(checkpoint: Record<string, number>): Promise<ActivityBatch>;
   /** Current byte offsets (EOF) of all sources — used to start observing from "now". */
   currentOffsets(): Promise<Record<string, number>>;
+  /** Recent activity (last `days`, capped to `maxChars`) — used for a full rebuild. */
+  readRecent(days: number, maxChars: number): Promise<string>;
   watch(onActivity: () => void): () => void;
 }
 

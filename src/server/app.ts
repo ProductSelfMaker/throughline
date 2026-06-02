@@ -14,6 +14,11 @@ export function createApp(session: Session): Hono {
     return c.json({ ok: true });
   });
 
+  app.post('/api/rebuild', async (c) => {
+    await session.rebuild();
+    return c.json({ ok: true });
+  });
+
   app.get('/api/events', (c) => {
     return streamSSE(c, async (stream) => {
       const current = await session.readSpec();

@@ -85,6 +85,25 @@ describe('SessionLogReader.readNew', () => {
   });
 });
 
+describe('SessionLogReader.readRecent', () => {
+  it('returns recent activity, excluding agent-* subagent logs', async () => {
+    await writeFile(join(sessionDir, 'r1.jsonl'), userLine('최근 작업') + asstLine('완료'));
+    await writeFile(join(sessionDir, 'agent-z.jsonl'), userLine('서브'));
+    const out = await new SessionLogReader({ cwd: CWD, home }).readRecent(30, 1000);
+    expect(out).toContain('사용자: 최근 작업');
+    expect(out).toContain('AI: 완료');
+    expect(out).not.toContain('서브');
+  });
+
+  it('caps to maxChars', async () => {
+    let body = '';
+    for (let i = 0; i < 40; i++) body += userLine(`m-${String(i).padStart(2, '0')}`);
+    await writeFile(join(sessionDir, 'r2.jsonl'), body);
+    const out = await new SessionLogReader({ cwd: CWD, home }).readRecent(30, 100);
+    expect(out.length).toBeLessThanOrEqual(100);
+  });
+});
+
 describe('SessionLogReader.currentOffsets', () => {
   it('returns byte sizes for session files, excluding agent-*', async () => {
     const s = join(sessionDir, 's1.jsonl');

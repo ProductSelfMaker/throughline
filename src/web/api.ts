@@ -17,3 +17,9 @@ export async function curate(instruction: string): Promise<void> {
   });
   if (!res.ok) throw new Error(`curate failed (${res.status})`);
 }
+
+/** Reset & re-organize: rebuild the PRD from a bounded window of recent activity. */
+export async function rebuild(): Promise<void> {
+  const res = await fetch('/api/rebuild', { method: 'POST' });
+  if (!res.ok) throw new Error(`rebuild failed (${res.status})`);
+}

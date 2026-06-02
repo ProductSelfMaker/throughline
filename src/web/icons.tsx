@@ -14,6 +14,7 @@ export const Icons: Record<string, ReactElement> = {
   tokens: stroke(<path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />),
   mockup: stroke(<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 9v11" /></>),
   send: stroke(<path d="M12 19V5M5 12l7-7 7 7" />),
+  refresh: stroke(<><path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v4h-4" /></>),
   sparkle: (
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l1.6 5.1a4 4 0 0 0 2.6 2.6L21.5 12l-5.1 1.6a4 4 0 0 0-2.6 2.6L12 21.5l-1.6-5.1a4 4 0 0 0-2.6-2.6L2.5 12l5.1-1.6a4 4 0 0 0 2.6-2.6z" /></svg>
   ),

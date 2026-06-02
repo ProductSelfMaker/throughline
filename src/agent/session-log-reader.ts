@@ -134,6 +134,50 @@ export class SessionLogReader implements ActivityReader {
     return { excerpt, advanced };
   }
 
+  /** Read the bounded tail of a single file as activity text (for rebuilds). */
+  private async readTailActivity(file: string, size: number): Promise<string> {
+    const readStart = Math.max(0, size - this.maxReadBytes);
+    const len = size - readStart;
+    if (len <= 0) return '';
+    const fh = await open(file, 'r');
+    try {
+      const buf = Buffer.alloc(len);
+      await fh.read(buf, 0, len, readStart);
+      let chunk = buf.toString('utf8');
+      if (readStart > 0) {
+        const nl = chunk.indexOf('\n');
+        chunk = nl >= 0 ? chunk.slice(nl + 1) : '';
+      }
+      return extractActivity(chunk.split('\n'));
+    } finally {
+      await fh.close();
+    }
+  }
+
+  /** Recent activity (files modified within `days`, newest first), capped to `maxChars`.
+   *  Used by a full rebuild — bounded so it never loads the whole history. */
+  async readRecent(days: number, maxChars: number): Promise<string> {
+    const cutoff = Date.now() - days * 86_400_000;
+    const recent: { file: string; size: number; mtime: number }[] = [];
+    for (const file of await this.sessionFiles()) {
+      try {
+        const s = await stat(file);
+        if (s.mtimeMs >= cutoff) recent.push({ file, size: s.size, mtime: s.mtimeMs });
+      } catch { /* skip */ }
+    }
+    recent.sort((a, b) => b.mtime - a.mtime); // newest first
+    const parts: string[] = [];
+    let used = 0;
+    for (const { file, size } of recent) {
+      if (used >= maxChars) break;
+      const text = await this.readTailActivity(file, size);
+      if (text) { parts.push(text); used += text.length; }
+    }
+    let excerpt = parts.reverse().join('\n'); // roughly chronological
+    if (excerpt.length > maxChars) excerpt = excerpt.slice(excerpt.length - maxChars);
+    return excerpt;
+  }
+
   watch(onActivity: () => void): () => void {
     const w = chokidar.watch(this.dir, { ignoreInitial: true, depth: 0 });
     w.on('add', onActivity).on('change', onActivity);

@@ -1,7 +1,7 @@
 // src/server/session.ts
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { ActivityReader } from '../domain/types';
+import { ActivityReader, DEFAULT_SPEC } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
@@ -12,6 +12,10 @@ import { buildCuratePrompt } from '../domain/curate-prompt';
 import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
+
+// Bounds for a full rebuild — re-scan recent activity only (never the whole history).
+const REBUILD_DAYS = 14;
+const REBUILD_MAX_CHARS = 40_000;
 
 async function defaultGitDiff(cwd: string): Promise<string> {
   try {
@@ -110,6 +114,27 @@ export class Session {
     const diff = await this.gitDiff(this.cwd);
     const raw = await this.runner.complete(buildCuratePrompt(current, text, diff));
     const applied = await applySpecUpdate(this.store, raw, current);
+    if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+  }
+
+  /** Reset & re-organize: discard the current PRD and rebuild it from a bounded
+   *  window of recent activity. Then resume incremental ingest from "now". */
+  async rebuild(): Promise<void> {
+    let next = DEFAULT_SPEC;
+    try {
+      const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS);
+      if (excerpt.trim()) {
+        const diff = await this.gitDiff(this.cwd);
+        const raw = await this.runner.complete(buildSyncPrompt(DEFAULT_SPEC, excerpt, diff));
+        if (raw.trim()) next = raw;
+      }
+    } catch {
+      next = DEFAULT_SPEC; // on failure, at least reset to a clean skeleton
+    }
+    const previous = await this.store.read();
+    const applied = await applySpecUpdate(this.store, next, previous);
+    this.checkpoint = await this.reader.currentOffsets();
+    await this.ingest.save(this.checkpoint);
     if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
   }
 
