@@ -25,10 +25,6 @@ export interface ScribeResult {
   changedLines: number[];
 }
 
-export type ChatEvent =
-  | { type: 'text'; text: string }
-  | { type: 'tool'; name: string; target: string };
-
 /** A batch of new agent activity since the last checkpoint. */
 export interface ActivityBatch {
   /** Scribe-ready excerpt: "사용자: …" / "AI: …" / "[도구] name target" lines. */
@@ -44,12 +40,6 @@ export interface ActivityReader {
 }
 
 export interface AgentRunner {
-  /** Drives the user's Claude Code; streams text deltas and tool-use events; resolves with the full assistant text. */
-  converse(
-    transcript: Message[],
-    onEvent: (e: ChatEvent) => void,
-    signal?: AbortSignal,
-  ): Promise<string>;
   /** One-shot: given the current spec + transcript, returns the full updated spec markdown. */
   scribe(
     currentSpecMarkdown: string,
