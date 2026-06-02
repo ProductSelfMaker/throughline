@@ -3,15 +3,19 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { fetchTranscript, sendChat, type Msg } from './api';
+import { Icons } from './icons';
 
 type Tool = { name: string; target: string };
 type Turn = { role: 'user' | 'assistant'; content: string; tools: Tool[] };
 
-export function ChatPane() {
+const SUGGESTIONS = ['로그인 페이지', '랜딩 페이지', '대시보드', '결제 플로우', 'API 연동'];
+
+export function ChatPane({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -51,58 +55,77 @@ export function ChatPane() {
     }
   }
 
-  function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    void send();
-  }
-
+  function onSubmit(e: FormEvent) { e.preventDefault(); void send(); }
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void send();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
+  }
+  function pickSuggestion(s: string) {
+    setInput(s + ' ');
+    inputRef.current?.focus();
   }
 
-  const composer = (
-    <form className="composer" onSubmit={onSubmit}>
+  const composer = (hero: boolean) => (
+    <form className="tl-composer" onSubmit={onSubmit}>
       <textarea
-        className="composer-input"
+        ref={hero ? inputRef : undefined}
+        className="tl-composer-input"
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="메시지를 입력하세요…"
+        placeholder={hero ? '무엇이든 설명해 주세요. 만들면서 다듬어 가요…' : '메시지를 입력하세요…'}
         rows={1}
         disabled={busy}
       />
-      <button type="submit" className="composer-send" disabled={busy || !input.trim()} aria-label="보내기">
-        ↑
-      </button>
+      <div className="tl-composer-row">
+        <span className="sp" />
+        <button type="submit" className="tl-send" disabled={busy || !input.trim()} title="보내기" aria-label="보내기">{Icons.send}</button>
+      </div>
     </form>
   );
 
+  const empty = turns.length === 0;
+  const firstUser = turns.find((t) => t.role === 'user')?.content ?? '';
+  const title = empty ? '새 대화' : firstUser ? (firstUser.length > 30 ? firstUser.slice(0, 30) + '…' : firstUser) : '대화';
+
   return (
-    <section className="chat">
-      {turns.length === 0 ? (
-        <div className="chat-hero">
-          <div className="hero-mark" aria-hidden>⌀</div>
-          <h1 className="hero-title">오늘 무엇을 만들까요?</h1>
-          <div className="hero-composer">{composer}</div>
+    <section className="tl-region tl-chat">
+      <div className="tl-chat-head">
+        <button className="tl-toggle" type="button" title="사이드바" aria-label="사이드바 토글" onClick={onToggleSidebar}>{Icons.toggle}</button>
+        <span className="tl-chat-title">{title}</span>
+        {empty ? null : <span className="tl-chat-sub">· {turns.length}개 메시지</span>}
+        <span className="sp" />
+      </div>
+
+      {empty ? (
+        <div className="tl-hero">
+          <div className="tl-hero-mark">{Icons.mark}</div>
+          <h1 className="tl-hero-title">오늘 무엇을 만들까요?</h1>
+          <p className="tl-hero-sub">대화로 만들고, 스펙과 유저 플로우는 백그라운드에서 자동으로 정리돼요.</p>
+          <div className="tl-hero-composer">{composer(true)}</div>
+          <div className="tl-suggest">
+            {SUGGESTIONS.map((s) => (
+              <button type="button" className="tl-chip" key={s} onClick={() => pickSuggestion(s)}>{Icons.bolt}{s}</button>
+            ))}
+          </div>
         </div>
       ) : (
         <>
-          <div className="chat-log">
-            <div className="chat-thread">
+          <div className="tl-log">
+            <div className="tl-thread">
               {turns.map((m, i) =>
                 m.role === 'user' ? (
-                  <div key={i} className="msg-user">{m.content}</div>
+                  <div key={i} className="tl-msg-user">{m.content}</div>
                 ) : (
-                  <div key={i} className="msg-asst">
-                    <div className="asst-label">✦ CLAUDE</div>
+                  <div key={i} className="tl-msg-asst">
+                    <div className="tl-asst-head">
+                      <span className="tl-asst-badge">{Icons.sparkle}</span>
+                      <span className="tl-asst-name">Claude</span>
+                    </div>
                     {m.tools.map((t, j) => (
-                      <span key={j} className="tool-chip">🔧 <b>{t.name}</b>{t.target ? ` ${t.target}` : ''} <span className="chk">✓</span></span>
+                      <span key={j} className="tl-tool"><b>{t.name}</b>{t.target ? <span className="path">{t.target}</span> : null}<span className="ok">{Icons.check}</span></span>
                     ))}
-                    <div className="asst-md">
-                      {m.content ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown> : <span className="typing">작성 중…</span>}
+                    <div className="tl-asst-md">
+                      {m.content ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown> : <span className="tl-typing">작성 중…</span>}
                     </div>
                   </div>
                 ),
@@ -110,7 +133,7 @@ export function ChatPane() {
               <div ref={endRef} />
             </div>
           </div>
-          <div className="composer-dock">{composer}</div>
+          <div className="tl-dock">{composer(false)}</div>
         </>
       )}
     </section>

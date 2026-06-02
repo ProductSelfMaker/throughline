@@ -1,7 +1,8 @@
 // src/web/ResizableDivider.tsx
 import { useEffect, useRef } from 'react';
 
-/** A vertical drag handle. Reports the desired RIGHT-pane width as a percentage of the window. */
+/** Drag handle (grip) in the gutter between chat + view. Reports the desired
+ *  RIGHT-pane (view) width as a percentage of the window. */
 export function ResizableDivider({
   onResize,
 }: {
@@ -30,12 +31,14 @@ export function ResizableDivider({
 
   return (
     <div
-      className="divider"
+      className="tl-divider"
       onMouseDown={() => {
         dragging.current = true;
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
       }}
-    />
+    >
+      <span className="tl-grip"><i /><i /><i /></span>
+    </div>
   );
 }

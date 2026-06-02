@@ -1,13 +1,15 @@
 // src/web/Sidebar.tsx
-// Grok-style left shell. Collapsible; body is intentionally empty for now
-// (conversation list / spaces are deferred — see SP-D spec §7). The collapse
-// toggle lives in App so it stays clickable when this panel is collapsed; the
-// brand keeps the service name (no logo mark) offset to clear that toggle.
-export function Sidebar({ open }: { open: boolean }) {
+// Left shell. Brand only for now — conversation search / new-chat / history are
+// omitted until there's multi-conversation backing (single conversation today).
+// Collapse is handled by App (it unmounts this when collapsed); the toggle lives
+// in the chat header.
+export function Sidebar() {
   return (
-    <aside className={`sidebar ${open ? '' : 'collapsed'}`} aria-hidden={!open}>
-      <div className="sidebar-brand">Throughline</div>
-      <div className="sidebar-body" />
+    <aside className="tl-region tl-sidebar">
+      <div className="tl-side-top">
+        <div className="tl-brand">Throughline</div>
+      </div>
+      <div className="tl-side-scroll" />
     </aside>
   );
 }
