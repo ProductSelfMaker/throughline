@@ -82,7 +82,7 @@ body { margin: 0; background: #e9e6dd; }
 .tl-canvas-vp { flex: 1; min-height: 0; position: relative; margin: 0 11px 11px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--inset); background-image: radial-gradient(var(--border-2) 1px, transparent 1px); background-size: 22px 22px; cursor: grab; }
 .tl-canvas-vp:active { cursor: grabbing; }
 .tl-canvas-pan { position: absolute; top: 0; left: 0; will-change: transform; }
-.tl-canvas-frame { width: 3400px; height: 2400px; border: 0; background: transparent; display: block; pointer-events: none; }
+.tl-canvas-frame { width: 7200px; height: 5200px; border: 0; background: transparent; display: block; pointer-events: none; }
 
 /* ===== analytics views (history / tokens) ===== */
 .tl-pad { flex: 1; overflow: auto; padding: 8px 30px 28px; }

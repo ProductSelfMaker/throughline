@@ -89,12 +89,25 @@ describe('Session (observer)', () => {
     expect(await store.read()).toContain('## 개요');
   });
 
-  it('generateMockup stores and returns the generated HTML', async () => {
+  it('generateMockup embeds the real CSS verbatim and wraps the LLM body fragment', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write('## 개요\n앱\n');
-    const html = '<!doctype html><html><body>mock</body></html>';
-    session = new Session({ store, runner: completer(html), reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
-    expect(await session.generateMockup()).toBe(html);
-    expect(await session.readMockup()).toBe(html);
+    const fragment = '<div class="mock-canvas"><div class="mock-art">mock</div></div>';
+    const css = '.tl{color:rebeccapurple}';
+    session = new Session({
+      store,
+      runner: completer(fragment),
+      reader: new FakeReader({ excerpt: '', advanced: {} }),
+      ingest: new IngestStore(dir),
+      cwd: dir,
+      gitDiff: async () => '',
+      uiSource: async () => ({ css, components: '// App.tsx', headLinks: '<link rel="stylesheet" href="https://x/y.css" />' }),
+    });
+    const out = await session.generateMockup();
+    expect(out).toContain(fragment);          // LLM body fragment is included
+    expect(out).toContain(css);               // real stylesheet embedded verbatim
+    expect(out).toContain('https://x/y.css'); // app's own font/style links carried over
+    expect(out.startsWith('<!doctype html')).toBe(true);
+    expect(await session.readMockup()).toBe(out);
   });
 });

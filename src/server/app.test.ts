@@ -64,12 +64,14 @@ describe('POST /api/rebuild', () => {
 });
 
 describe('/api/mockup', () => {
-  it('GET returns "" when none; POST generates and returns the html', async () => {
-    session = mk('<html>m</html>');
+  it('GET returns "" when none; POST generates and returns the assembled html', async () => {
+    session = mk('<div class="mock-canvas">m</div>');
     const app = createApp(session);
     expect(await (await app.request('/api/mockup')).json()).toEqual({ html: '' });
     const post = await app.request('/api/mockup', { method: 'POST' });
-    expect(await post.json()).toEqual({ html: '<html>m</html>' });
+    const { html } = (await post.json()) as { html: string };
+    expect(html.startsWith('<!doctype html')).toBe(true);
+    expect(html).toContain('<div class="mock-canvas">m</div>'); // fragment wrapped into a full doc
   });
 });
 

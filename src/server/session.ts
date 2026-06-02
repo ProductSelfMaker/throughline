@@ -14,6 +14,8 @@ import { buildSyncPrompt } from '../domain/sync-prompt';
 import { buildCuratePrompt } from '../domain/curate-prompt';
 import { buildDecisionsPrompt } from '../domain/decisions-prompt';
 import { buildMockupPrompt } from '../domain/mockup-prompt';
+import { assembleMockupHtml } from '../domain/mockup-html';
+import { collectUiSource, UiSource } from '../agent/project-ui-source';
 import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
@@ -43,14 +45,14 @@ interface Completer {
 export interface SessionDeps {
   store: SpecStore;
   runner: Completer;
-  /** Optional separate runner for mockup generation — runs in the real project cwd
-   *  so it can read the actual UI source (the scribe runner uses a neutral cwd). */
-  mockupRunner?: Completer;
   reader: ActivityReader;
   ingest: IngestStore;
   cwd: string;
   debounceMs?: number;
   gitDiff?: (cwd: string) => Promise<string>;
+  /** Reads the observed project's real frontend source (for faithful mockups).
+   *  Defaults to scanning the project cwd; injectable for tests. */
+  uiSource?: (cwd: string) => Promise<UiSource>;
 }
 
 /** Observer: reads the user's agent session logs and keeps the PRD live. */
@@ -59,12 +61,12 @@ export class Session {
 
   private store: SpecStore;
   private runner: Completer;
-  private mockupRunner?: Completer;
   private reader: ActivityReader;
   private ingest: IngestStore;
   private cwd: string;
   private debouncer: Debouncer;
   private gitDiff: (cwd: string) => Promise<string>;
+  private uiSource: (cwd: string) => Promise<UiSource>;
   private decisionsPath: string;
   private mockupPath: string;
   private checkpoint: Record<string, number> = {};
@@ -73,12 +75,12 @@ export class Session {
   constructor(deps: SessionDeps) {
     this.store = deps.store;
     this.runner = deps.runner;
-    this.mockupRunner = deps.mockupRunner;
     this.reader = deps.reader;
     this.ingest = deps.ingest;
     this.cwd = deps.cwd;
     this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
+    this.uiSource = deps.uiSource ?? collectUiSource;
     this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.md');
     this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
   }
@@ -89,12 +91,17 @@ export class Session {
     catch { return ''; }
   }
 
-  /** Generate a self-contained HTML design-canvas mockup from the product doc. */
+  /** Generate a design-canvas mockup. We read the project's REAL stylesheet +
+   *  components, embed the CSS verbatim, and let the LLM reproduce each screen's
+   *  DOM as artboards — so the mockup matches the running app instead of an
+   *  LLM re-derivation. Data comes from the product doc, inferred from UI for gaps. */
   async generateMockup(): Promise<string> {
     const doc = await this.store.read();
     try {
-      const html = (await (this.mockupRunner ?? this.runner).complete(buildMockupPrompt(doc))).trim();
-      if (html) {
+      const src = await this.uiSource(this.cwd);
+      const fragment = (await this.runner.complete(buildMockupPrompt({ doc, css: src.css, components: src.components }))).trim();
+      if (fragment) {
+        const html = assembleMockupHtml(src.css, fragment, src.headLinks);
         await mkdir(dirname(this.mockupPath), { recursive: true });
         await writeFile(this.mockupPath, html, 'utf8');
       }
