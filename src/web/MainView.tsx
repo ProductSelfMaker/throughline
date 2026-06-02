@@ -47,11 +47,11 @@ export function MainView({ activeView, md }: { activeView: ViewId; md: string })
       {activeView === 'doc' ? (
         <div className="tl-doc">
           <div className="tl-doc-inner">
-            <div className="tl-kicker">PRD · 자동 생성</div>
+            <div className="tl-kicker">제품 문서 · 자동 생성</div>
             {md.trim() ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripFrontmatter(md)}</ReactMarkdown>
             ) : (
-              <p className="tl-placeholder">터미널에서 작업을 시작하면 PRD가 여기에 자동으로 쌓입니다.</p>
+              <p className="tl-placeholder">터미널에서 작업을 시작하면, 기능·페이지별 제품 문서가 여기에 자동으로 정리됩니다.</p>
             )}
           </div>
         </div>

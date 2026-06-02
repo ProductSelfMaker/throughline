@@ -9,10 +9,10 @@ describe('buildScribePrompt', () => {
     { role: 'assistant', content: '구글/애플 추가했어요' },
   ];
 
-  it('embeds the spine rules, current spec, and transcript, and demands full output', () => {
-    const prompt = buildScribePrompt('## 🎯 요약\n기존 요약', transcript);
+  it('embeds the spine, current doc, and transcript, and demands full output', () => {
+    const prompt = buildScribePrompt('## 개요\n기존', transcript);
     for (const h of SPINE_HEADINGS) expect(prompt).toContain(h);
-    expect(prompt).toContain('기존 요약');
+    expect(prompt).toContain('기존');
     expect(prompt).toContain('로그인은 소셜만 쓸게');
     expect(prompt).toContain('구글/애플 추가했어요');
     expect(prompt).toContain('전체');

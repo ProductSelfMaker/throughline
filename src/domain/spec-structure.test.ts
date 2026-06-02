@@ -9,13 +9,9 @@ describe('validateSpec', () => {
   });
 
   it('reports each missing spine heading', () => {
-    const result = validateSpec('## 📌 개요\n\nhello\n');
+    const result = validateSpec('## 개요\n\nhello\n');
     expect(result.ok).toBe(false);
-    expect(result.errors).toEqual([
-      'missing spine heading: ## 🎯 목표',
-      'missing spine heading: ## ✅ 기능 요구사항',
-      'missing spine heading: ## ❓ 미해결 질문',
-    ]);
+    expect(result.errors).toEqual(['missing spine heading: ## 열린 질문']);
   });
 });
 
@@ -25,7 +21,7 @@ describe('ensureSpine', () => {
   });
 
   it('appends missing spine headings while preserving existing content', () => {
-    const healed = ensureSpine('## 📌 개요\n앱 설명\n');
+    const healed = ensureSpine('## 개요\n앱 설명\n');
     for (const h of SPINE_HEADINGS) expect(healed).toContain(h);
     expect(healed).toContain('앱 설명');
   });

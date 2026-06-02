@@ -1,11 +1,4 @@
-export interface FeatureItem {
-  id: string;
-  text: string;
-  done: boolean;
-}
-
 export interface ParsedSpec {
-  features: FeatureItem[];
   openQuestions: string[];
   headings: string[];
 }
@@ -50,36 +43,25 @@ export interface AgentRunner {
     transcript: Message[],
     signal?: AbortSignal,
   ): Promise<string>;
-  /** Generic one-shot completion for a prompt (used for derived artifacts like the user-flow diagram). */
+  /** Generic one-shot completion for a prompt (sync, curation, flow). */
   complete(prompt: string, signal?: AbortSignal): Promise<string>;
 }
 
-/** PRD spine sections. A lean, always-present backbone; the scribe grows other
- *  `## <topic>` sections freely beneath it. Missing ones are self-healed (not
- *  rejected) on update — see ensureSpine. */
-export const OVERVIEW_HEADING = '## 📌 개요';
-export const GOALS_HEADING = '## 🎯 목표';
-export const REQUIREMENTS_HEADING = '## ✅ 기능 요구사항';
-export const OPEN_QUESTIONS_HEADING = '## ❓ 미해결 질문';
+/** The living PRODUCT doc — a user-facing explanation of the service, organized by
+ *  feature/page. `## 개요` (what the service is, for whom) and `## 열린 질문` are always
+ *  present; each feature grows its own `## <name>` section (무엇 / 동작·정책 / 요소 / 상태).
+ *  This is NOT a work log — that lives in history. */
+export const OVERVIEW_HEADING = '## 개요';
+export const OPEN_QUESTIONS_HEADING = '## 열린 질문';
+export const SPINE_HEADINGS = [OVERVIEW_HEADING, OPEN_QUESTIONS_HEADING] as const;
 
-export const SPINE_HEADINGS = [
-  OVERVIEW_HEADING,
-  GOALS_HEADING,
-  REQUIREMENTS_HEADING,
-  OPEN_QUESTIONS_HEADING,
-] as const;
-
-/** Scaffold used when no spec.md exists yet — an empty PRD skeleton. */
+/** Scaffold used when no doc exists yet — an empty product-doc skeleton. */
 export const DEFAULT_SPEC = `---
 title: Untitled
 updated:
 ---
 
-${OVERVIEW_HEADING}
+## 개요
 
-${GOALS_HEADING}
-
-${REQUIREMENTS_HEADING}
-
-${OPEN_QUESTIONS_HEADING}
+## 열린 질문
 `;

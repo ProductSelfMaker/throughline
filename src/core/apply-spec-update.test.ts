@@ -8,40 +8,32 @@ import { applySpecUpdate } from './apply-spec-update';
 import { SPINE_HEADINGS } from '../domain/types';
 
 let dir: string;
-beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'throughline-'));
-});
-afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
-});
+beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'throughline-')); });
+afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
-const VALID = `## 📌 개요
+const VALID = `## 개요
 앱
 
-## 🎯 목표
-- 빠름
+## 로그인
+**무엇** 이메일·비밀번호 인증.
 
-## ✅ 기능 요구사항
-- [ ] 소셜 로그인
-
-## ❓ 미해결 질문
+## 열린 질문
 - 결제?
 `;
 
 describe('applySpecUpdate', () => {
-  it('writes markdown with feature ids and returns the change set', async () => {
-    const store = new SpecStore(join(dir, 'spec.md'));
+  it('writes markdown and returns the change set', async () => {
+    const store = new SpecStore(join(dir, 'doc.md'));
     const out = await applySpecUpdate(store, VALID, '');
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     expect(out.result.changedLines.length).toBeGreaterThan(0);
-    const onDisk = await store.read();
-    expect(onDisk).toContain('- [ ] 소셜 로그인 <!-- id: feat-');
-    expect(onDisk).toBe(out.result.md);
+    expect(out.result.md).toContain('## 로그인');
+    expect(await store.read()).toBe(out.result.md);
   });
 
   it('self-heals missing spine headings instead of rejecting', async () => {
-    const store = new SpecStore(join(dir, 'spec.md'));
+    const store = new SpecStore(join(dir, 'doc.md'));
     const out = await applySpecUpdate(store, '대충 적은 메모', '');
     expect(out.ok).toBe(true);
     if (!out.ok) return;
@@ -51,12 +43,12 @@ describe('applySpecUpdate', () => {
   });
 
   it('rejects empty output without writing', async () => {
-    const store = new SpecStore(join(dir, 'spec.md'));
-    await store.write('## 📌 개요\n원본\n');
-    const out = await applySpecUpdate(store, '   ', '## 📌 개요\n원본\n');
+    const store = new SpecStore(join(dir, 'doc.md'));
+    await store.write('## 개요\n원본\n');
+    const out = await applySpecUpdate(store, '   ', '## 개요\n원본\n');
     expect(out.ok).toBe(false);
     if (out.ok) return;
     expect(out.errors.length).toBeGreaterThan(0);
-    expect(await store.read()).toBe('## 📌 개요\n원본\n');
+    expect(await store.read()).toBe('## 개요\n원본\n');
   });
 });
