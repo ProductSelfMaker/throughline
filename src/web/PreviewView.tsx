@@ -1,11 +1,17 @@
 // src/web/PreviewView.tsx
+// Simplified per SP-D: just a URL input + the iframe. Type a URL and press
+// Enter to (re)load it. Before any address is entered the body is empty — the
+// iframe only ever loads what the user explicitly submits (it never auto-loads
+// a remembered URL on open). No separate open/reload buttons.
 import { useState, type FormEvent } from 'react';
 
 const URL_KEY = 'throughline.previewUrl';
 
 export function PreviewView() {
-  const [url, setUrl] = useState(() => localStorage.getItem(URL_KEY) ?? '');
-  const [draft, setDraft] = useState(url);
+  // `draft` remembers the last address for convenience; `url` (what the iframe
+  // renders) starts empty so nothing shows until the user presses Enter.
+  const [draft, setDraft] = useState(() => localStorage.getItem(URL_KEY) ?? '');
+  const [url, setUrl] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
 
   function load(e: FormEvent) {
@@ -17,32 +23,18 @@ export function PreviewView() {
   }
 
   return (
-    <section className="preview">
+    <div className="preview">
       <form className="url-bar" onSubmit={load}>
-        <span aria-hidden>👁</span>
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="http://localhost:3000"
+          aria-label="미리보기 주소"
         />
-        <button type="submit">열기</button>
-        {url ? (
-          <button type="button" title="새로고침" onClick={() => setReloadKey((k) => k + 1)}>
-            ⟳
-          </button>
-        ) : null}
       </form>
       <div className="preview-body">
-        {url ? (
-          <iframe key={reloadKey} src={url} title="preview" className="preview-frame" />
-        ) : (
-          <p className="empty">
-            로컬 개발 서버 주소를 입력하면 여기서 바로 보여요 (예: http://localhost:3000).
-            <br />
-            일부 앱은 임베드를 차단할 수 있어요 — 프록시 지원은 다음 단계입니다.
-          </p>
-        )}
+        {url ? <iframe key={reloadKey} src={url} title="preview" className="preview-frame" /> : null}
       </div>
-    </section>
+    </div>
   );
 }

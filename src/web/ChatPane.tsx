@@ -1,5 +1,5 @@
 // src/web/ChatPane.tsx
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { fetchTranscript, sendChat, type Msg } from './api';
@@ -23,8 +23,7 @@ export function ChatPane() {
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [turns]);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function send() {
     const text = input.trim();
     if (!text || busy) return;
     setInput('');
@@ -52,32 +51,68 @@ export function ChatPane() {
     }
   }
 
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    void send();
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
+  }
+
+  const composer = (
+    <form className="composer" onSubmit={onSubmit}>
+      <textarea
+        className="composer-input"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="메시지를 입력하세요…"
+        rows={1}
+        disabled={busy}
+      />
+      <button type="submit" className="composer-send" disabled={busy || !input.trim()} aria-label="보내기">
+        ↑
+      </button>
+    </form>
+  );
+
   return (
     <section className="chat">
-      <header className="chat-head">💬 Claude Code</header>
-      <div className="chat-log">
-        {turns.length === 0 ? <p className="empty">무엇을 만들까요? 메시지를 입력해 시작하세요.</p> : null}
-        {turns.map((m, i) =>
-          m.role === 'user' ? (
-            <div key={i} className="msg-user">{m.content}</div>
-          ) : (
-            <div key={i} className="msg-asst">
-              <div className="asst-label">✦ CLAUDE</div>
-              {m.tools.map((t, j) => (
-                <span key={j} className="tool-chip">🔧 <b>{t.name}</b>{t.target ? ` ${t.target}` : ''} <span className="chk">✓</span></span>
-              ))}
-              <div className="asst-md">
-                {m.content ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown> : <span className="typing">작성 중…</span>}
-              </div>
+      {turns.length === 0 ? (
+        <div className="chat-hero">
+          <div className="hero-mark" aria-hidden>⌀</div>
+          <h1 className="hero-title">오늘 무엇을 만들까요?</h1>
+          <div className="hero-composer">{composer}</div>
+        </div>
+      ) : (
+        <>
+          <div className="chat-log">
+            <div className="chat-thread">
+              {turns.map((m, i) =>
+                m.role === 'user' ? (
+                  <div key={i} className="msg-user">{m.content}</div>
+                ) : (
+                  <div key={i} className="msg-asst">
+                    <div className="asst-label">✦ CLAUDE</div>
+                    {m.tools.map((t, j) => (
+                      <span key={j} className="tool-chip">🔧 <b>{t.name}</b>{t.target ? ` ${t.target}` : ''} <span className="chk">✓</span></span>
+                    ))}
+                    <div className="asst-md">
+                      {m.content ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown> : <span className="typing">작성 중…</span>}
+                    </div>
+                  </div>
+                ),
+              )}
+              <div ref={endRef} />
             </div>
-          ),
-        )}
-        <div ref={endRef} />
-      </div>
-      <form className="composer" onSubmit={submit}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="메시지를 입력하세요…" disabled={busy} />
-        <button disabled={busy} aria-label="보내기">↑</button>
-      </form>
+          </div>
+          <div className="composer-dock">{composer}</div>
+        </>
+      )}
     </section>
   );
 }
