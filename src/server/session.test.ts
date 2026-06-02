@@ -61,7 +61,38 @@ describe('Session (observer)', () => {
     expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 42 });
   });
 
-  it('rebuild resets the doc from recent activity, advances the checkpoint, and broadcasts', async () => {
+  it('rebuild builds the doc from a code scan (map → reduce) when source is present', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## 개요\n옛 내용\n');
+    const ingest = new IngestStore(dir);
+    const reader = new FakeReader({ excerpt: '', advanced: {} }, { '/x/s1.jsonl': 5 }, '사용자: 최근 작업');
+
+    // prompt-aware runner: distinguishes map vs final synthesis
+    const calls: string[] = [];
+    const runner = {
+      complete: async (prompt: string) => {
+        if (prompt.includes('제품 분석가다')) { calls.push('map'); return '- 저장 버튼: 클릭 시 문서를 저장한다'; }
+        if (prompt.includes('제품 문서')) { calls.push('reduce'); return DOC; }
+        calls.push('other'); return DOC; // decisions etc.
+      },
+    };
+    session = new Session({
+      store, runner, reader, ingest, cwd: dir, gitDiff: async () => '',
+      projectCode: async () => ({ files: [{ path: 'src/App.tsx', content: '<button>저장</button>' }], truncated: false }),
+    });
+    const updated = new Promise<ScribeResult>((res) =>
+      session!.broadcaster.subscribe((ev, d) => { if (ev === 'spec-updated') res(d as ScribeResult); }));
+
+    await session.rebuild();
+    await updated;
+    expect(calls).toContain('map');               // per-chunk extraction ran
+    expect(calls).toContain('reduce');             // final synthesis ran
+    expect(await store.read()).toContain('## 로그인'); // code-grounded doc written
+    expect(await store.read()).not.toContain('옛 내용');
+    expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 5 }); // checkpoint reset to "now"
+  });
+
+  it('rebuild falls back to activity-based regeneration when there is no source', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write('## 개요\n옛 내용\n');
     const ingest = new IngestStore(dir);

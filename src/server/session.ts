@@ -16,6 +16,8 @@ import { buildDecisionsPrompt } from '../domain/decisions-prompt';
 import { buildMockupPrompt } from '../domain/mockup-prompt';
 import { assembleMockupHtml } from '../domain/mockup-html';
 import { collectUiSource, UiSource } from '../agent/project-ui-source';
+import { collectProjectFiles, chunkByBudget, ProjectCode } from '../agent/project-code';
+import { buildCodeMapPrompt, buildReduceMergePrompt, buildProductDocPrompt, DocContext } from '../domain/product-doc-prompt';
 import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
@@ -23,6 +25,35 @@ const execFileP = promisify(execFile);
 // Bounds for a full rebuild — re-scan recent activity only (never the whole history).
 const REBUILD_DAYS = 14;
 const REBUILD_MAX_CHARS = 40_000;
+
+// Code-grounded rebuild (map → merge → reduce over the project's source).
+// Infrequent + quality-first, so budgets are generous.
+const MAP_CHUNK_BUDGET = 120_000;   // chars of code per map call
+const REDUCE_BUDGET = 120_000;      // chars of summaries per merge/synthesis call
+const MAP_CONCURRENCY = 4;          // parallel map calls
+
+/** Run `fn` over items with bounded concurrency, preserving order. */
+async function pool<T, R>(items: T[], limit: number, fn: (t: T, i: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length || 1) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+  });
+  await Promise.all(workers);
+  return out;
+}
+const joinLen = (parts: string[]): number => parts.reduce((n, p) => n + p.length + 2, 0);
+function batchByBudget(parts: string[], budget: number): string[][] {
+  const batches: string[][] = [];
+  let cur: string[] = [];
+  let size = 0;
+  for (const p of parts) {
+    if (cur.length && size + p.length > budget) { batches.push(cur); cur = []; size = 0; }
+    cur.push(p); size += p.length + 2;
+  }
+  if (cur.length) batches.push(cur);
+  return batches;
+}
 
 // Bounds for the (live) history/tokens analytics scan.
 const ANALYTICS_DAYS = 30;
@@ -53,6 +84,9 @@ export interface SessionDeps {
   /** Reads the observed project's real frontend source (for faithful mockups).
    *  Defaults to scanning the project cwd; injectable for tests. */
   uiSource?: (cwd: string) => Promise<UiSource>;
+  /** Reads the observed project's full source (for the code-grounded rebuild).
+   *  Defaults to scanning the project cwd; injectable for tests. */
+  projectCode?: (cwd: string) => Promise<ProjectCode>;
 }
 
 /** Observer: reads the user's agent session logs and keeps the PRD live. */
@@ -67,6 +101,7 @@ export class Session {
   private debouncer: Debouncer;
   private gitDiff: (cwd: string) => Promise<string>;
   private uiSource: (cwd: string) => Promise<UiSource>;
+  private projectCode: (cwd: string) => Promise<ProjectCode>;
   private decisionsPath: string;
   private mockupPath: string;
   private checkpoint: Record<string, number> = {};
@@ -81,6 +116,7 @@ export class Session {
     this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
     this.uiSource = deps.uiSource ?? collectUiSource;
+    this.projectCode = deps.projectCode ?? collectProjectFiles;
     this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.md');
     this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
   }
@@ -179,19 +215,16 @@ export class Session {
     if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
   }
 
-  /** Reset & re-organize: discard the current PRD and rebuild it from a bounded
-   *  window of recent activity. Then resume incremental ingest from "now". */
+  /** Reset & re-organize: discard the current PRD and rebuild it from a deep,
+   *  code-grounded scan of the whole project (map → merge → reduce), with recent
+   *  activity/decisions for intent. Then resume incremental ingest from "now". */
   async rebuild(): Promise<void> {
     const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS).catch(() => '');
-    const diff = excerpt.trim() ? await this.gitDiff(this.cwd) : '';
 
-    // product doc — reset to a clean skeleton, then rebuild from recent activity
+    // product doc — rebuilt from the codebase (the truth of what's actually built)
     let nextDoc = DEFAULT_SPEC;
     try {
-      if (excerpt.trim()) {
-        const raw = await this.runner.complete(buildSyncPrompt(DEFAULT_SPEC, excerpt, diff));
-        if (raw.trim()) nextDoc = raw;
-      }
+      nextDoc = await this.buildDocFromCode(excerpt);
     } catch {
       nextDoc = DEFAULT_SPEC;
     }
@@ -211,6 +244,57 @@ export class Session {
     this.checkpoint = await this.reader.currentOffsets();
     await this.ingest.save(this.checkpoint);
     if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+  }
+
+  /** Deep, code-grounded product doc. Reads the whole project (bounded), extracts
+   *  user-facing behavior per chunk (map), collapses to fit (merge), then synthesizes
+   *  the detailed doc (reduce). Falls back to activity-based when there's no source. */
+  private async buildDocFromCode(activityExcerpt: string): Promise<string> {
+    const { files, truncated } = await this.projectCode(this.cwd);
+
+    if (files.length === 0) {
+      if (!activityExcerpt.trim()) return DEFAULT_SPEC;
+      const diff = await this.gitDiff(this.cwd);
+      const raw = await this.runner.complete(buildSyncPrompt(DEFAULT_SPEC, activityExcerpt, diff));
+      return raw.trim() ? raw : DEFAULT_SPEC;
+    }
+
+    const chunks = chunkByBudget(files, MAP_CHUNK_BUDGET);
+    const maps = (await pool(chunks, MAP_CONCURRENCY, (c) =>
+      this.runner.complete(buildCodeMapPrompt(c.label, c.text)).catch(() => ''),
+    )).filter((s) => s.trim());
+
+    const ctx: DocContext = {
+      manifest: files.find((f) => /(^|\/)package\.json$/i.test(f.path))?.content,
+      readme: files.find((f) => /(^|\/)readme(\.[a-z]+)?$/i.test(f.path))?.content,
+      decisions: await this.readDecisions().catch(() => ''),
+      activity: activityExcerpt,
+      truncated,
+    };
+    return this.reduceToDoc(maps, ctx);
+  }
+
+  /** Collapse per-chunk summaries (hierarchically if large) then synthesize the doc. */
+  private async reduceToDoc(summaries: string[], ctx: DocContext): Promise<string> {
+    let level = summaries.filter((s) => s.trim());
+    if (level.length === 0) return DEFAULT_SPEC;
+
+    let guard = 0;
+    while (joinLen(level) > REDUCE_BUDGET && level.length > 1 && guard < 6) {
+      guard += 1;
+      const batches = batchByBudget(level, REDUCE_BUDGET);
+      if (batches.length >= level.length) break; // can't shrink further
+      const merged: string[] = [];
+      for (const b of batches) {
+        const m = (await this.runner.complete(buildReduceMergePrompt(b.join('\n\n'))).catch(() => '')).trim();
+        if (m) merged.push(m);
+      }
+      if (merged.length === 0) break;
+      level = merged;
+    }
+
+    const doc = await this.runner.complete(buildProductDocPrompt(level.join('\n\n'), ctx));
+    return doc.trim() ? doc : DEFAULT_SPEC;
   }
 
   /** Run any pending ingest immediately (tests / shutdown). */
