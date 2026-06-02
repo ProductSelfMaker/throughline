@@ -19,7 +19,8 @@ export function createApp(session: Session): Hono {
       const current = await session.readSpec();
       await stream.writeSSE({ event: 'spec-updated', data: JSON.stringify({ md: current, changedLines: [] }) });
       const unsub = session.broadcaster.subscribe((event, data) => {
-        void stream.writeSSE({ event, data: JSON.stringify(data) });
+        // never let a write to a closed stream become an unhandled rejection (crashes Node)
+        stream.writeSSE({ event, data: JSON.stringify(data) }).catch(() => {});
       });
       stream.onAbort(() => unsub());
       if (stream.aborted) { unsub(); return; }

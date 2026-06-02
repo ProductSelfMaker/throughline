@@ -61,10 +61,16 @@ export class Session {
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
   }
 
-  /** Load the checkpoint, catch up on any unprocessed activity, then watch. */
+  /** Load the checkpoint; on first run observe from "now" (a long-lived project's
+   *  history is far too large to ingest at once); otherwise catch up. Then watch. */
   async init(): Promise<void> {
     this.checkpoint = await this.ingest.load();
-    await this.ingestNow();
+    if (Object.keys(this.checkpoint).length === 0) {
+      this.checkpoint = await this.reader.currentOffsets();
+      await this.ingest.save(this.checkpoint);
+    } else {
+      await this.ingestNow();
+    }
     this.unwatch = this.reader.watch(() => this.debouncer.schedule(() => { void this.ingestNow(); }));
   }
 

@@ -1,10 +1,16 @@
 // src/agent/session-log-reader.ts
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, stat, open } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import chokidar from 'chokidar';
 import { ActivityBatch, ActivityReader } from '../domain/types';
+
+// Bounds — a long-lived project's session dir can be hundreds of MB across many
+// files; never read it all. Read at most a tail window per file per tick, and
+// cap the excerpt fed to the scribe.
+const DEFAULT_MAX_READ_BYTES = 512 * 1024;
+const DEFAULT_MAX_EXCERPT_CHARS = 12_000;
 
 /** Claude Code stores per-project sessions under ~/.claude/projects/<dashed cwd>/. */
 export function encodeProjectDir(cwd: string): string {
@@ -60,8 +66,12 @@ export function extractActivity(lines: string[]): string {
 
 export class SessionLogReader implements ActivityReader {
   private dir: string;
-  constructor(opts: { cwd: string; home?: string }) {
+  private maxReadBytes: number;
+  private maxExcerptChars: number;
+  constructor(opts: { cwd: string; home?: string; maxReadBytes?: number; maxExcerptChars?: number }) {
     this.dir = join(opts.home ?? homedir(), '.claude', 'projects', encodeProjectDir(opts.cwd));
+    this.maxReadBytes = opts.maxReadBytes ?? DEFAULT_MAX_READ_BYTES;
+    this.maxExcerptChars = opts.maxExcerptChars ?? DEFAULT_MAX_EXCERPT_CHARS;
   }
 
   private async sessionFiles(): Promise<string[]> {
@@ -72,23 +82,56 @@ export class SessionLogReader implements ActivityReader {
       .map((n) => join(this.dir, n));
   }
 
+  /** Current byte size of every session file — used to "observe from now" on first run. */
+  async currentOffsets(): Promise<Record<string, number>> {
+    const out: Record<string, number> = {};
+    for (const f of await this.sessionFiles()) {
+      try { out[f] = (await stat(f)).size; } catch { /* skip */ }
+    }
+    return out;
+  }
+
+  /** Read only the new tail of each session file (bounded), advancing offsets. */
   async readNew(checkpoint: Record<string, number>): Promise<ActivityBatch> {
-    const files = await this.sessionFiles();
     const parts: string[] = [];
     const advanced: Record<string, number> = {};
-    for (const file of files) {
-      const buf = await readFile(file);
+    for (const file of await this.sessionFiles()) {
+      let size: number;
+      try { size = (await stat(file)).size; } catch { continue; }
       const from = checkpoint[file] ?? 0;
-      if (buf.length <= from) continue;
-      const chunk = buf.subarray(from).toString('utf8');
-      const lastNl = chunk.lastIndexOf('\n');
-      if (lastNl === -1) continue; // no complete line yet
-      const complete = chunk.slice(0, lastNl);
-      const text = extractActivity(complete.split('\n'));
-      if (text) parts.push(text);
-      advanced[file] = from + Buffer.byteLength(complete, 'utf8') + 1; // +1 for the consumed '\n'
+      if (size <= from) continue;
+
+      const readStart = Math.max(from, size - this.maxReadBytes);
+      const len = size - readStart;
+      const fh = await open(file, 'r');
+      try {
+        const buf = Buffer.alloc(len);
+        await fh.read(buf, 0, len, readStart);
+        let chunk = buf.toString('utf8');
+        // if we skipped ahead past unread history, drop the partial first line
+        if (readStart > from) {
+          const nl = chunk.indexOf('\n');
+          chunk = nl >= 0 ? chunk.slice(nl + 1) : '';
+        }
+        const lastNl = chunk.lastIndexOf('\n');
+        if (lastNl === -1) {
+          // no complete line in the window: skip ahead only if the window is full
+          // (a pathologically long line); otherwise wait for the line to finish.
+          if (len >= this.maxReadBytes) advanced[file] = size;
+          continue;
+        }
+        const complete = chunk.slice(0, lastNl);
+        const trailing = Buffer.byteLength(chunk.slice(lastNl + 1), 'utf8');
+        const text = extractActivity(complete.split('\n'));
+        if (text) parts.push(text);
+        advanced[file] = size - trailing; // preserve a partial trailing line for next tick
+      } finally {
+        await fh.close();
+      }
     }
-    return { excerpt: parts.join('\n'), advanced };
+    let excerpt = parts.join('\n');
+    if (excerpt.length > this.maxExcerptChars) excerpt = excerpt.slice(excerpt.length - this.maxExcerptChars);
+    return { excerpt, advanced };
   }
 
   watch(onActivity: () => void): () => void {

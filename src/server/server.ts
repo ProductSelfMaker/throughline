@@ -36,9 +36,14 @@ if (!existsSync(prdPath) && existsSync(legacy)) {
   }
 }
 
+// Run the scribe agent in a neutral dir (not the observed project) so its own
+// Claude Code session logs don't land in the watched dir and feed back into the PRD.
+const scribeDir = join(cwd, '.throughline', 'agent');
+mkdirSync(scribeDir, { recursive: true });
+
 const session = new Session({
   store: new SpecStore(prdPath),
-  runner: new ClaudeCodeRunner({ cwd }),
+  runner: new ClaudeCodeRunner({ cwd: scribeDir }),
   reader: new SessionLogReader({ cwd }),
   ingest: new IngestStore(cwd),
   cwd,

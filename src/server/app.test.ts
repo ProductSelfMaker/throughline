@@ -11,6 +11,7 @@ import { ActivityReader } from '../domain/types';
 
 const idleReader: ActivityReader = {
   async readNew() { return { excerpt: '', advanced: {} }; },
+  async currentOffsets() { return {}; },
   watch() { return () => {}; },
 };
 

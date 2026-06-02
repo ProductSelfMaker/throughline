@@ -44,7 +44,7 @@ describe('extractActivity', () => {
   });
 });
 
-describe('SessionLogReader', () => {
+describe('SessionLogReader.readNew', () => {
   it('reads new lines, advances offsets, and excludes agent-* subagent logs', async () => {
     await writeFile(join(sessionDir, 's1.jsonl'), userLine('안녕') + asstLine('네'));
     await writeFile(join(sessionDir, 'agent-abc.jsonl'), userLine('서브에이전트'));
@@ -69,5 +69,29 @@ describe('SessionLogReader', () => {
     await writeFile(f, userLine('완성된 줄') + userLine('미완성→완성'));
     const out2 = await reader.readNew(out.advanced);
     expect(out2.excerpt).toBe('사용자: 미완성→완성');
+  });
+
+  it('bounds the read to a tail window (never loads the whole history)', async () => {
+    const f = join(sessionDir, 'big.jsonl');
+    let body = '';
+    for (let i = 0; i < 60; i++) body += userLine(`msg-${String(i).padStart(2, '0')}`);
+    await writeFile(f, body); // well over the tiny cap below
+    const reader = new SessionLogReader({ cwd: CWD, home, maxReadBytes: 200, maxExcerptChars: 120 });
+    const out = await reader.readNew({});
+    expect(out.excerpt.length).toBeLessThanOrEqual(120);     // excerpt capped
+    expect(out.excerpt).not.toContain('msg-00');             // earliest history skipped
+    expect(out.excerpt).toContain('msg-59');                 // latest activity kept
+    expect(out.advanced[f]).toBe(body.length);               // advanced to EOF (no re-read of the gap)
+  });
+});
+
+describe('SessionLogReader.currentOffsets', () => {
+  it('returns byte sizes for session files, excluding agent-*', async () => {
+    const s = join(sessionDir, 's1.jsonl');
+    await writeFile(s, userLine('안녕'));
+    await writeFile(join(sessionDir, 'agent-x.jsonl'), userLine('sub'));
+    const offs = await new SessionLogReader({ cwd: CWD, home }).currentOffsets();
+    expect(offs[s]).toBeGreaterThan(0);
+    expect(Object.keys(offs)).toEqual([s]);
   });
 });

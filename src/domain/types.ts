@@ -36,6 +36,8 @@ export interface ActivityBatch {
 /** Reads new agent activity for a project and watches for more. */
 export interface ActivityReader {
   readNew(checkpoint: Record<string, number>): Promise<ActivityBatch>;
+  /** Current byte offsets (EOF) of all sources — used to start observing from "now". */
+  currentOffsets(): Promise<Record<string, number>>;
   watch(onActivity: () => void): () => void;
 }
 
