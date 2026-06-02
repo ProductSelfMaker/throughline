@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Throughline UI — Design Handoff (current)</title>
+<style>
+  /* ===================================================================
+     DESIGN TOKENS — edit globally here (mirrors src/web/styles.css :root)
+     =================================================================== */
+  :root {
+    --canvas: #f2f2f3;       /* app background (the grey gutters show through) */
+    --card: #ffffff;         /* each region is a white card */
+    --border: #e8e8ea;       /* thin neutral card border */
+    --border-strong: #dcdcdf;
+    --text: #1a1a1a;
+    --muted: #8e8e93;
+    --chip-bg: #f4f4f5;      /* user bubble + tool chip + inline code */
+    --radius: 14px;          /* card corner radius */
+    --gutter: 10px;          /* consistent gap between every region */
+  }
+
+  /* ---- handoff page chrome (NOT part of the product) ---- */
+  * { box-sizing: border-box; }
+  body.handoff {
+    margin: 0;
+    background: #e6e6e8;
+    font-family: -apple-system, system-ui, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+    color: #1a1a1a;
+    padding: 40px 24px 64px;
+  }
+  .handoff-head { max-width: 1280px; margin: 0 auto 28px; }
+  .handoff-head h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .handoff-head p { margin: 0; color: #6b6b70; font-size: 14px; line-height: 1.6; }
+  .screen-label {
+    max-width: 1280px; margin: 0 auto 10px; font-size: 13px; font-weight: 700;
+    color: #44444a; letter-spacing: .01em;
+  }
+  .screen-note { max-width: 1280px; margin: -4px auto 12px; font-size: 12px; color: #8a8a90; }
+  .window {
+    width: 1280px; max-width: 100%; height: 760px; margin: 0 auto 52px;
+    border-radius: 18px; overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.06);
+  }
+
+  /* ===================================================================
+     PRODUCT STYLES — mirrors src/web/styles.css 1:1
+     (only difference: .app uses height:100% to fit the preview window)
+     =================================================================== */
+  .app { display: flex; height: 100%; overflow: hidden; position: relative; background: var(--canvas); }
+  .empty { color: var(--muted); }
+
+  /* shared card surface for each region (the flex items) */
+  .sidebar, .chat-col, .view-col, .rail {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    margin: var(--gutter) 0;
+  }
+
+  /* ---- Sidebar ---- */
+  .sidebar {
+    flex: 0 0 240px; display: flex; flex-direction: column; overflow: hidden;
+    margin-left: var(--gutter);
+    transition: flex-basis .18s ease, margin .18s ease, opacity .18s ease, border-width .18s ease;
+  }
+  .sidebar.collapsed { flex-basis: 0; margin-left: 0; border-width: 0; opacity: 0; }
+  .sidebar-brand {
+    height: 52px; display: flex; align-items: center; padding: 0 18px 0 50px;
+    font-size: 15px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-body { flex: 1; min-height: 0; }
+
+  /* collapse toggle — over .app so it stays clickable when collapsed */
+  .sidebar-toggle {
+    position: absolute; top: 19px; left: 19px; z-index: 20;
+    width: 30px; height: 30px; display: grid; place-items: center;
+    border: 1px solid transparent; border-radius: 8px; background: transparent;
+    color: #6b6b70; cursor: pointer;
+  }
+  .sidebar-toggle:hover { background: #ececed; color: #1a1a1a; }
+  .sidebar-toggle svg { display: block; }
+
+  /* ---- Chat ---- */
+  .chat-col { display: flex; min-width: 0; height: 100%; overflow: hidden; margin-left: var(--gutter); }
+  .chat { flex: 1; min-width: 0; display: flex; flex-direction: column; background: transparent; }
+
+  .chat-hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px; }
+  .hero-mark { width: 56px; height: 56px; display: grid; place-items: center; font-size: 30px; border-radius: 16px; background: #f2f2f3; color: #3a3a3c; }
+  .hero-title { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
+  .hero-composer { width: 100%; max-width: 720px; }
+  .hero-composer .composer-input { font-size: 16px; }
+
+  .chat-log { flex: 1; overflow-y: auto; min-height: 0; padding: 28px 24px 8px; }
+  .chat-thread { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  .msg-user { align-self: flex-end; max-width: 85%; background: var(--chip-bg); border-radius: 18px; padding: 10px 16px; line-height: 1.55; white-space: pre-wrap; font-size: 15px; }
+  .msg-asst { display: flex; flex-direction: column; gap: 8px; }
+  .asst-label { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: #71717a; }
+  .tool-chip { align-self: flex-start; display: inline-flex; gap: 6px; align-items: center; background: var(--chip-bg); border: 1px solid var(--border); border-radius: 9px; padding: 3px 10px; font-size: 12px; color: #52525b; }
+  .tool-chip .chk { color: #9ca3af; }
+  .asst-md { line-height: 1.65; font-size: 15px; }
+  .asst-md p { margin: 0 0 8px; }
+  .asst-md code { background: var(--chip-bg); border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; font-size: 13px; }
+
+  .composer-dock { padding: 12px 24px 22px; }
+  .composer { display: flex; align-items: flex-end; gap: 8px; max-width: 720px; margin: 0 auto; background: #fff; border: 1px solid var(--border-strong); border-radius: 26px; padding: 8px 8px 8px 18px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.04); }
+  .composer-input { flex: 1; border: none; outline: none; resize: none; font: inherit; font-size: 15px; line-height: 1.5; max-height: 200px; padding: 7px 0; background: transparent; color: var(--text); }
+  .composer-input::placeholder { color: var(--muted); }
+  .composer-send { flex: 0 0 auto; width: 36px; height: 36px; border: none; border-radius: 50%; background: #1a1a1a; color: #fff; font-size: 17px; cursor: pointer; display: grid; place-items: center; }
+
+  /* ---- Resize divider (sits in the gutter between chat + view) ---- */
+  .divider { flex: 0 0 var(--gutter); margin: var(--gutter) 0; background: transparent; cursor: col-resize; position: relative; }
+  .divider::after { content: ""; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 3px; height: 36px; border-radius: 3px; background: var(--border-strong); opacity: 0; transition: opacity .15s ease; }
+  .divider:hover::after { opacity: 1; }
+
+  /* ---- View panel (card) ---- */
+  .view-col { display: flex; min-width: 0; height: 100%; overflow: hidden; }
+  .view { flex: 1; min-width: 0; display: flex; flex-direction: column; background: transparent; }
+  .view-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+  .placeholder { margin: auto; color: var(--muted); font-size: 14px; }
+
+  .preview { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .url-bar { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .url-bar input { width: 100%; padding: 9px 14px; border: 1px solid var(--border-strong); border-radius: 12px; font-size: 14px; outline: none; }
+  .preview-body { flex: 1; min-height: 0; display: flex; }
+
+  /* ---- Right icon rail (card) ---- */
+  .rail { flex: 0 0 52px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; margin-left: var(--gutter); margin-right: var(--gutter); }
+  .rail-btn { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 11px; background: transparent; cursor: pointer; color: #6b6b70; }
+  .rail-btn svg { display: block; }
+  .rail-btn:hover { background: #f2f2f3; color: #3a3a3c; }
+  .rail-btn.active { background: #ececed; border-color: var(--border-strong); color: #1a1a1a; }
+</style>
+</head>
+<body class="handoff">
+
+<div class="handoff-head">
+  <h1>Throughline — current UI (design handoff)</h1>
+  <p>
+    4-zone layout on a soft grey canvas; each zone is a white rounded card separated by a consistent 10px gutter.
+    Grayscale only. Three representative states are shown below. Class names match the React/CSS source so edits map back cleanly.
+    All tokens are at the top of the <code>&lt;style&gt;</code> block. See <code>README.md</code> for tokens, interactions, and what's open to redesign.
+  </p>
+</div>
+
+<!-- ============================ STATE 1 ============================ -->
+<div class="screen-label">1 · 빈 상태 — Empty / hero (no view panel)</div>
+<div class="window">
+  <div class="app">
+    <button class="sidebar-toggle" title="사이드바 접기" aria-label="사이드바 접기">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><line x1="9.5" y1="4" x2="9.5" y2="20"/></svg>
+    </button>
+    <aside class="sidebar">
+      <div class="sidebar-brand">Throughline</div>
+      <div class="sidebar-body"></div>
+    </aside>
+    <div class="chat-col">
+      <section class="chat">
+        <div class="chat-hero">
+          <div class="hero-mark">⌀</div>
+          <h1 class="hero-title">오늘 무엇을 만들까요?</h1>
+          <div class="hero-composer">
+            <form class="composer" onsubmit="return false">
+              <textarea class="composer-input" rows="1" placeholder="메시지를 입력하세요…"></textarea>
+              <button class="composer-send" aria-label="보내기">↑</button>
+            </form>
+          </div>
+        </div>
+      </section>
+    </div>
+    <nav class="rail" aria-label="뷰">
+      <button class="rail-btn" title="문서" aria-label="문서"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg></button>
+      <button class="rail-btn" title="플로우" aria-label="플로우"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M6 8.2v2.3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8.2"/><path d="M12 12.5v3.3"/></svg></button>
+      <button class="rail-btn" title="프리뷰" aria-label="프리뷰"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.7"/></svg></button>
+    </nav>
+  </div>
+</div>
+
+<!-- ============================ STATE 2 ============================ -->
+<div class="screen-label">2 · 작업 중 — 대화 + 프리뷰 뷰 열림</div>
+<div class="screen-note">drag-resizable boundary (chat 55% / view 45% here, clamp 20–80%). 프리뷰는 주소 입력(Enter) 전엔 본문이 비어 있음.</div>
+<div class="window">
+  <div class="app">
+    <button class="sidebar-toggle" title="사이드바 접기" aria-label="사이드바 접기">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><line x1="9.5" y1="4" x2="9.5" y2="20"/></svg>
+    </button>
+    <aside class="sidebar">
+      <div class="sidebar-brand">Throughline</div>
+      <div class="sidebar-body"></div>
+    </aside>
+    <div class="chat-col" style="flex-basis:55%">
+      <section class="chat">
+        <div class="chat-log">
+          <div class="chat-thread">
+            <div class="msg-user">로그인 페이지 만들어줘</div>
+            <div class="msg-asst">
+              <div class="asst-label">✦ CLAUDE</div>
+              <span class="tool-chip">🔧 <b>Write</b> src/Login.tsx <span class="chk">✓</span></span>
+              <div class="asst-md"><p>로그인 페이지를 만들었어요. 이메일·비밀번호 입력과 제출 버튼, 그리고 기본 검증을 포함했습니다. <code>src/Login.tsx</code> 를 확인해 주세요.</p></div>
+            </div>
+            <div class="msg-user">제출 버튼을 더 크게</div>
+            <div class="msg-asst">
+              <div class="asst-label">✦ CLAUDE</div>
+              <span class="tool-chip">🔧 <b>Edit</b> src/Login.tsx <span class="chk">✓</span></span>
+              <div class="asst-md"><p>버튼 높이를 키우고 전체 너비로 바꿨어요.</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="composer-dock">
+          <form class="composer" onsubmit="return false">
+            <textarea class="composer-input" rows="1" placeholder="메시지를 입력하세요…"></textarea>
+            <button class="composer-send" aria-label="보내기">↑</button>
+          </form>
+        </div>
+      </section>
+    </div>
+    <div class="divider"></div>
+    <div class="view-col" style="flex-basis:45%">
+      <section class="view">
+        <div class="view-body">
+          <div class="preview">
+            <form class="url-bar" onsubmit="return false">
+              <input placeholder="http://localhost:3000" aria-label="미리보기 주소" />
+            </form>
+            <div class="preview-body"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <nav class="rail" aria-label="뷰">
+      <button class="rail-btn" title="문서" aria-label="문서"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg></button>
+      <button class="rail-btn" title="플로우" aria-label="플로우"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M6 8.2v2.3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8.2"/><path d="M12 12.5v3.3"/></svg></button>
+      <button class="rail-btn active" title="프리뷰" aria-label="프리뷰"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.7"/></svg></button>
+    </nav>
+  </div>
+</div>
+
+<!-- ============================ STATE 3 ============================ -->
+<div class="screen-label">3 · 사이드바 접힘 + 문서 뷰 (placeholder)</div>
+<div class="screen-note">문서/플로우는 현재 muted placeholder (살아있는 스펙·플로우는 추후 연결). 접기 토글은 접힌 상태에서도 좌상단에 남아 다시 펼침.</div>
+<div class="window">
+  <div class="app">
+    <button class="sidebar-toggle" title="사이드바 펼치기" aria-label="사이드바 펼치기" style="background:#ececed;color:#1a1a1a">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><line x1="9.5" y1="4" x2="9.5" y2="20"/></svg>
+    </button>
+    <aside class="sidebar collapsed">
+      <div class="sidebar-brand">Throughline</div>
+      <div class="sidebar-body"></div>
+    </aside>
+    <div class="chat-col" style="flex-basis:60%">
+      <section class="chat">
+        <div class="chat-log">
+          <div class="chat-thread">
+            <div class="msg-user">유저 플로우도 정리되면 좋겠어</div>
+            <div class="msg-asst">
+              <div class="asst-label">✦ CLAUDE</div>
+              <div class="asst-md"><p>대화와 변경사항을 바탕으로 스펙과 유저 플로우를 백그라운드에서 계속 갱신하고 있어요.</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="composer-dock">
+          <form class="composer" onsubmit="return false">
+            <textarea class="composer-input" rows="1" placeholder="메시지를 입력하세요…"></textarea>
+            <button class="composer-send" aria-label="보내기">↑</button>
+          </form>
+        </div>
+      </section>
+    </div>
+    <div class="divider"></div>
+    <div class="view-col" style="flex-basis:40%">
+      <section class="view">
+        <div class="view-body">
+          <p class="placeholder">문서가 여기에 표시됩니다.</p>
+        </div>
+      </section>
+    </div>
+    <nav class="rail" aria-label="뷰">
+      <button class="rail-btn active" title="문서" aria-label="문서"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg></button>
+      <button class="rail-btn" title="플로우" aria-label="플로우"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M6 8.2v2.3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8.2"/><path d="M12 12.5v3.3"/></svg></button>
+      <button class="rail-btn" title="프리뷰" aria-label="프리뷰"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.7"/></svg></button>
+    </nav>
+  </div>
+</div>
+
+</body>
+</html>
