@@ -1,0 +1,73 @@
+// src/agent/session-log-reader.test.ts
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { SessionLogReader, encodeProjectDir, extractActivity } from './session-log-reader';
+
+const CWD = '/Users/x/proj';
+
+function line(obj: unknown): string { return JSON.stringify(obj) + '\n'; }
+const userLine = (t: string) => line({ type: 'user', message: { role: 'user', content: t } });
+const asstLine = (t: string, tool?: { name: string; input: unknown }) =>
+  line({ type: 'assistant', message: { role: 'assistant', content: [
+    ...(t ? [{ type: 'text', text: t }] : []),
+    ...(tool ? [{ type: 'tool_use', name: tool.name, input: tool.input }] : []),
+  ] } });
+
+let home: string;
+let sessionDir: string;
+beforeEach(async () => {
+  home = await mkdtemp(join(tmpdir(), 'tl-home-'));
+  sessionDir = join(home, '.claude', 'projects', encodeProjectDir(CWD));
+  await mkdir(sessionDir, { recursive: true });
+});
+afterEach(async () => { await rm(home, { recursive: true, force: true }); });
+
+describe('encodeProjectDir', () => {
+  it("maps a cwd to Claude Code's dashed project dir name", () => {
+    expect(encodeProjectDir('/Users/x/proj')).toBe('-Users-x-proj');
+  });
+});
+
+describe('extractActivity', () => {
+  it('renders user/assistant text and tool_use, skips other line types', () => {
+    const lines = [
+      JSON.stringify({ type: 'mode', mode: 'x' }),
+      JSON.stringify({ type: 'user', message: { role: 'user', content: '로그인 만들어' } }),
+      JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [
+        { type: 'text', text: '했어요' },
+        { type: 'tool_use', name: 'Write', input: { file_path: 'src/Login.tsx' } },
+      ] } }),
+    ];
+    expect(extractActivity(lines)).toBe('사용자: 로그인 만들어\nAI: 했어요\n[도구] Write src/Login.tsx');
+  });
+});
+
+describe('SessionLogReader', () => {
+  it('reads new lines, advances offsets, and excludes agent-* subagent logs', async () => {
+    await writeFile(join(sessionDir, 's1.jsonl'), userLine('안녕') + asstLine('네'));
+    await writeFile(join(sessionDir, 'agent-abc.jsonl'), userLine('서브에이전트'));
+    const reader = new SessionLogReader({ cwd: CWD, home });
+
+    const first = await reader.readNew({});
+    expect(first.excerpt).toContain('사용자: 안녕');
+    expect(first.excerpt).toContain('AI: 네');
+    expect(first.excerpt).not.toContain('서브에이전트');
+    expect(first.advanced[join(sessionDir, 's1.jsonl')]).toBeGreaterThan(0);
+
+    const second = await reader.readNew(first.advanced);
+    expect(second.excerpt).toBe('');
+  });
+
+  it('does not consume a partial trailing line (no newline yet)', async () => {
+    const f = join(sessionDir, 's2.jsonl');
+    await writeFile(f, userLine('완성된 줄') + '{"type":"user","message":{"role":"user","content":"미완성');
+    const reader = new SessionLogReader({ cwd: CWD, home });
+    const out = await reader.readNew({});
+    expect(out.excerpt).toBe('사용자: 완성된 줄');
+    await writeFile(f, userLine('완성된 줄') + userLine('미완성→완성'));
+    const out2 = await reader.readNew(out.advanced);
+    expect(out2.excerpt).toBe('사용자: 미완성→완성');
+  });
+});
