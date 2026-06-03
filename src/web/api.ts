@@ -4,6 +4,14 @@ import type { Analytics } from '../domain/types';
 export type SpecUpdate = { md: string; changedLines: number[] };
 export type { Analytics };
 
+/** Which project directory this instance is observing. */
+export async function fetchInfo(): Promise<{ cwd: string; display: string }> {
+  const res = await fetch('/api/info');
+  if (!res.ok) return { cwd: '', display: '' };
+  const data = (await res.json()) as { cwd?: string; display?: string };
+  return { cwd: data.cwd ?? '', display: data.display ?? '' };
+}
+
 /** Live history + token analytics over recent session logs. */
 export async function fetchAnalytics(): Promise<Analytics> {
   const res = await fetch('/api/analytics');

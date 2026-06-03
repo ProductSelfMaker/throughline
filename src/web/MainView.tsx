@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { rebuild, fetchMockup, generateMockup, type Analytics } from './api';
+import { rebuild, fetchMockup, generateMockup, fetchInfo, type Analytics } from './api';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
@@ -16,6 +16,11 @@ import type { ViewId } from './ViewRail';
 function stripFrontmatter(md: string): string {
   const m = /^\s*---\n[\s\S]*?\n---\s*\n?/.exec(md);
   return m ? md.slice(m[0].length) : md;
+}
+
+/** Shorten a path keeping the meaningful tail (project folder) visible. */
+function shortenPath(p: string, max = 52): string {
+  return p.length <= max ? p : '…' + p.slice(p.length - max + 1);
 }
 
 export function MainView({
@@ -33,6 +38,13 @@ export function MainView({
   const [busy, setBusy] = useState(false);
   const [mockupHtml, setMockupHtml] = useState<string | null>(null);
   const [mockupBusy, setMockupBusy] = useState(false);
+  const [info, setInfo] = useState<{ cwd: string; display: string } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchInfo().then((i) => { if (alive) setInfo(i); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     if (activeView !== 'mockup') return;
@@ -57,6 +69,7 @@ export function MainView({
     <section className="tl-region tl-main">
       <div className="tl-toprow">
         <span className="wm">Throughline</span>
+        {info?.display ? <span className="tl-cwd" title={info.cwd}>{shortenPath(info.display)}</span> : null}
         <span className="sp" />
         {activeView === 'mockup' ? (
           <button className="tl-gen" type="button" onClick={() => void genMockup()} disabled={mockupBusy}>

@@ -1,10 +1,19 @@
 // src/server/app.ts
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import { homedir } from 'node:os';
 import { Session } from './session';
 
 export function createApp(session: Session): Hono {
   const app = new Hono();
+
+  // which project this instance observes (shown in the top row)
+  app.get('/api/info', (c) => {
+    const cwd = session.projectDir();
+    const home = homedir();
+    const display = home && cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
+    return c.json({ cwd, display });
+  });
 
   app.post('/api/curate', async (c) => {
     const body = await c.req.json<{ instruction?: string }>();

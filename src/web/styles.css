@@ -44,6 +44,7 @@ body { margin: 0; background: #e9e6dd; }
 /* top row: service name only (no divider) */
 .tl-toprow { display: flex; align-items: center; gap: 12px; padding: 16px 22px 8px; flex: 0 0 auto; }
 .tl-toprow .wm { font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+.tl-toprow .tl-cwd { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--inset); }
 .tl-toprow .sp { flex: 1; }
 
 /* toprow rebuild button */

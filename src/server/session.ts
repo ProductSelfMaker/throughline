@@ -239,6 +239,11 @@ export class Session {
     return this.store.read();
   }
 
+  /** The project directory this instance is observing. */
+  projectDir(): string {
+    return this.cwd;
+  }
+
   /** Live history + token analytics over recent session logs. */
   analytics(): Promise<Analytics> {
     return this.reader.analyze(ANALYTICS_DAYS, ANALYTICS_MAX_BYTES);

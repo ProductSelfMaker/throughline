@@ -75,6 +75,17 @@ describe('/api/mockup', () => {
   });
 });
 
+describe('GET /api/info', () => {
+  it('reports the observed project directory', async () => {
+    session = mk();
+    const res = await createApp(session).request('/api/info');
+    const data = (await res.json()) as { cwd: string; display: string };
+    expect(data.cwd).toBe(dir);
+    expect(typeof data.display).toBe('string');
+    expect(data.display.length).toBeGreaterThan(0);
+  });
+});
+
 describe('GET /api/decisions', () => {
   it('returns the cached decisions doc + refreshing flag ("" / false when none yet)', async () => {
     session = mk();
