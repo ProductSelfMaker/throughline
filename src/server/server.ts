@@ -57,12 +57,28 @@ if (hasUI) {
   app.use('/*', serveStatic({ root: distDir }));
 }
 
-const port = Number(process.env.PORT ?? 5174);
-serve({ fetch: app.fetch, port }, (info) => {
-  const url = `http://localhost:${info.port}`;
-  console.log(`Throughline → ${url}  (observing ${cwd})`);
-  if (process.env.OPEN !== '0' && hasUI) void open(url);
-});
+// Bind a free port so several projects can each run their own Throughline at once
+// (different terminals → different ports). Bind-and-retry: the real listen is the
+// test, so simultaneous launches never collide (no probe-then-bind race).
+const desiredPort = Number(process.env.PORT ?? 5174);
+const MAX_PORT_TRIES = 30;
+function startServer(port: number, triesLeft: number): void {
+  const server = serve({ fetch: app.fetch, port }, (info) => {
+    const url = `http://localhost:${info.port}`;
+    if (info.port !== desiredPort) console.log(`Throughline: port ${desiredPort} busy → using ${info.port}`);
+    console.log(`Throughline → ${url}  (observing ${cwd})`);
+    if (process.env.OPEN !== '0' && hasUI) void open(url);
+  });
+  server.once('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE' && triesLeft > 0) {
+      startServer(port + 1, triesLeft - 1);
+    } else {
+      console.error(`Throughline: failed to start — ${err.message}`);
+      process.exit(1);
+    }
+  });
+}
+startServer(desiredPort, MAX_PORT_TRIES);
 
 const shutdown = () => { session.stop(); process.exit(0); };
 process.on('SIGINT', shutdown);
