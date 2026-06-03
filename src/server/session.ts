@@ -159,14 +159,16 @@ export class Session {
   }
 
   /** Load the checkpoint; on first run observe from "now" (a long-lived project's
-   *  history is far too large to ingest at once); otherwise catch up. Then watch. */
+   *  history is far too large to ingest at once); otherwise catch up. Then watch.
+   *  The catch-up ingest runs in the background — it makes an LLM call, so it must
+   *  never block the HTTP server from starting. */
   async init(): Promise<void> {
     this.checkpoint = await this.ingest.load();
     if (Object.keys(this.checkpoint).length === 0) {
       this.checkpoint = await this.reader.currentOffsets();
       await this.ingest.save(this.checkpoint);
     } else {
-      await this.ingestNow();
+      void this.ingestNow(); // fire-and-forget: catch up without blocking startup
     }
     this.unwatch = this.reader.watch(() => this.debouncer.schedule(() => { void this.ingestNow(); }));
   }
