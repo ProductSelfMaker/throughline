@@ -21,7 +21,8 @@ export function createApp(session: Session): Hono {
 
   app.get('/api/analytics', async (c) => c.json(await session.analytics()));
 
-  app.get('/api/decisions', async (c) => c.json({ md: await session.readDecisions() }));
+  // refresh-on-open: regenerates from recent activity only when logs changed
+  app.get('/api/decisions', async (c) => c.json({ md: await session.ensureDecisions() }));
 
   app.get('/api/mockup', async (c) => c.json({ html: await session.readMockup() }));
   app.post('/api/mockup', async (c) => c.json({ html: await session.generateMockup() }));

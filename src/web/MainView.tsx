@@ -60,7 +60,7 @@ export function MainView({
         <span className="sp" />
         {activeView === 'mockup' ? (
           <button className="tl-gen" type="button" onClick={() => void genMockup()} disabled={mockupBusy}>
-            {Icons.sparkle}{mockupBusy ? '생성 중…' : mockupHtml ? '다시 생성' : '목업 생성'}
+            {Icons.sparkle}{mockupBusy ? '생성 중…' : mockupHtml ? '최신화' : '목업 생성'}
           </button>
         ) : null}
         <button className="tl-rebtn" type="button" onClick={() => setConfirm(true)} title="최근 기록으로 문서·의사결정을 새로 정리">

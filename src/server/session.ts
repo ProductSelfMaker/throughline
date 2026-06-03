@@ -103,6 +103,7 @@ export class Session {
   private uiSource: (cwd: string) => Promise<UiSource>;
   private projectCode: (cwd: string) => Promise<ProjectCode>;
   private decisionsPath: string;
+  private decisionsStatePath: string;
   private mockupPath: string;
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
@@ -118,6 +119,7 @@ export class Session {
     this.uiSource = deps.uiSource ?? collectUiSource;
     this.projectCode = deps.projectCode ?? collectProjectFiles;
     this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.md');
+    this.decisionsStatePath = join(deps.cwd, '.throughline', 'decisions-state.json');
     this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
   }
 
@@ -156,6 +158,45 @@ export class Session {
   private async writeDecisions(md: string): Promise<void> {
     await mkdir(dirname(this.decisionsPath), { recursive: true });
     await writeFile(this.decisionsPath, md, 'utf8');
+  }
+
+  /** A cheap monotonic "have logs changed" marker (sum of current byte offsets). */
+  private async activityMark(): Promise<number> {
+    try { return Object.values(await this.reader.currentOffsets()).reduce((a, b) => a + b, 0); }
+    catch { return -1; }
+  }
+  private async readDecisionsMark(): Promise<number | null> {
+    try { return JSON.parse(await readFile(this.decisionsStatePath, 'utf8')).mark ?? null; }
+    catch { return null; }
+  }
+  private async writeDecisionsMark(mark: number): Promise<void> {
+    try {
+      await mkdir(dirname(this.decisionsStatePath), { recursive: true });
+      await writeFile(this.decisionsStatePath, JSON.stringify({ mark }), 'utf8');
+    } catch { /* best-effort */ }
+  }
+
+  /** Decisions, refreshed on open: regenerate from recent activity only when the
+   *  logs have changed since the last generation; otherwise return the cached doc. */
+  async ensureDecisions(): Promise<string> {
+    const existing = await this.readDecisions();
+    try {
+      const mark = await this.activityMark();
+      const prevMark = await this.readDecisionsMark();
+      if (existing && prevMark !== null && prevMark === mark) return existing; // up to date
+
+      const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS).catch(() => '');
+      if (!excerpt.trim()) return existing; // nothing to extract from — keep what we have
+      const dec = await this.runner.complete(buildDecisionsPrompt(excerpt));
+      if (dec.trim()) {
+        await this.writeDecisions(dec);
+        await this.writeDecisionsMark(mark);
+        return dec;
+      }
+      return existing;
+    } catch {
+      return existing; // best-effort; never fail the view
+    }
   }
 
   /** Load the checkpoint; on first run observe from "now" (a long-lived project's
@@ -217,9 +258,10 @@ export class Session {
     if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
   }
 
-  /** Reset & re-organize: discard the current PRD and rebuild it from a deep,
-   *  code-grounded scan of the whole project (map → merge → reduce), with recent
-   *  activity/decisions for intent. Then resume incremental ingest from "now". */
+  /** Reset & re-organize the *product doc*: discard the current PRD and rebuild it
+   *  from a deep, code-grounded scan of the whole project (map → merge → reduce).
+   *  Decisions are not touched here — they refresh on open (see ensureDecisions).
+   *  Then resume incremental ingest from "now". */
   async rebuild(): Promise<void> {
     const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS).catch(() => '');
 
@@ -232,16 +274,6 @@ export class Session {
     }
     const previous = await this.store.read();
     const applied = await applySpecUpdate(this.store, nextDoc, previous);
-
-    // decisions — regenerate from the same recent activity (best-effort)
-    try {
-      if (excerpt.trim()) {
-        const dec = await this.runner.complete(buildDecisionsPrompt(excerpt));
-        if (dec.trim()) await this.writeDecisions(dec);
-      }
-    } catch {
-      // keep the previous decisions doc
-    }
 
     this.checkpoint = await this.reader.currentOffsets();
     await this.ingest.save(this.checkpoint);
