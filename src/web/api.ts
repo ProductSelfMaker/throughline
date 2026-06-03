@@ -42,6 +42,13 @@ export function subscribeSpec(onSpec: (u: SpecUpdate) => void): () => void {
   return () => es.close();
 }
 
+/** Subscribe to the "AI is working" status (SSE 'status'). */
+export function subscribeStatus(onStatus: (working: boolean) => void): () => void {
+  const es = new EventSource('/api/events');
+  es.addEventListener('status', (e) => onStatus(!!JSON.parse((e as MessageEvent).data).working));
+  return () => es.close();
+}
+
 /** Send a curation instruction to the scribe (it edits the PRD; changes arrive via SSE). */
 export async function curate(instruction: string): Promise<void> {
   const res = await fetch('/api/curate', {

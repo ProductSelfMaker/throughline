@@ -59,6 +59,7 @@ export function createApp(session: Session): Hono {
     return streamSSE(c, async (stream) => {
       const current = await session.readSpec();
       await stream.writeSSE({ event: 'spec-updated', data: JSON.stringify({ md: current, changedLines: [] }) });
+      await stream.writeSSE({ event: 'status', data: JSON.stringify({ working: session.isWorking() }) });
       const unsub = session.broadcaster.subscribe((event, data) => {
         // never let a write to a closed stream become an unhandled rejection (crashes Node)
         stream.writeSSE({ event, data: JSON.stringify(data) }).catch(() => {});

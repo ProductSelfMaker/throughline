@@ -125,6 +125,11 @@ export class Session {
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
 
+  // "AI is working" state — true while an LLM op runs or new activity is pending.
+  private busyCount = 0;
+  private pendingActivity = false;
+  private lastWorking = false;
+
   constructor(deps: SessionDeps) {
     this.store = deps.store;
     this.runner = deps.runner;
@@ -152,18 +157,20 @@ export class Session {
    *  DOM as artboards — so the mockup matches the running app instead of an
    *  LLM re-derivation. Data comes from the product doc, inferred from UI for gaps. */
   async generateMockup(): Promise<string> {
-    const doc = await this.store.read();
-    try {
-      const src = await this.uiSource(this.cwd);
-      const fragment = (await this.runner.complete(buildMockupPrompt({ doc, css: src.css, components: src.components }))).trim();
-      if (fragment) {
-        const html = assembleMockupHtml(src.css, fragment, src.headLinks);
-        await mkdir(dirname(this.mockupPath), { recursive: true });
-        await writeFile(this.mockupPath, html, 'utf8');
+    await this.runBusy(async () => {
+      const doc = await this.store.read();
+      try {
+        const src = await this.uiSource(this.cwd);
+        const fragment = (await this.runner.complete(buildMockupPrompt({ doc, css: src.css, components: src.components }))).trim();
+        if (fragment) {
+          const html = assembleMockupHtml(src.css, fragment, src.headLinks);
+          await mkdir(dirname(this.mockupPath), { recursive: true });
+          await writeFile(this.mockupPath, html, 'utf8');
+        }
+      } catch {
+        // keep the previous mockup
       }
-    } catch {
-      // keep the previous mockup
-    }
+    });
     return this.readMockup();
   }
 
@@ -250,7 +257,7 @@ export class Session {
       const advancedTo = (used.length ? used[used.length - 1] : fresh[fresh.length - 1]).time;
       if (!used.length) { await this.writeDecisionsState({ mark, ts: now, lastTime: advancedTo }); return; }
 
-      const raw = await this.runner.complete(buildDecisionsExtractPrompt(parts.join('\n\n'), ledger.map((d) => d.what)));
+      const raw = await this.runBusy(() => this.runner.complete(buildDecisionsExtractPrompt(parts.join('\n\n'), ledger.map((d) => d.what))));
       const seen = new Set(ledger.map((d) => normWhat(d.what)));
       for (const p of parseDecisions(raw)) {
         const what = p.what.trim();
@@ -288,7 +295,11 @@ export class Session {
     } else {
       void this.ingestNow(); // fire-and-forget: catch up without blocking startup
     }
-    this.unwatch = this.reader.watch(() => this.debouncer.schedule(() => { void this.ingestNow(); }));
+    this.unwatch = this.reader.watch(() => {
+      this.pendingActivity = true; // observed agent is active; an update is coming
+      this.syncWorking();
+      this.debouncer.schedule(() => { void this.ingestNow(); });
+    });
   }
 
   readSpec(): Promise<string> {
@@ -298,6 +309,25 @@ export class Session {
   /** The project directory this instance is observing. */
   projectDir(): string {
     return this.cwd;
+  }
+
+  /** Whether Throughline is currently working (ingesting/updating). */
+  isWorking(): boolean {
+    return this.busyCount > 0 || this.pendingActivity;
+  }
+  private syncWorking(): void {
+    const w = this.isWorking();
+    if (w !== this.lastWorking) {
+      this.lastWorking = w;
+      this.broadcaster.broadcast('status', { working: w });
+    }
+  }
+  /** Run an LLM-backed op while reflecting "working" to the UI. */
+  private async runBusy<T>(fn: () => Promise<T>): Promise<T> {
+    this.busyCount += 1;
+    this.syncWorking();
+    try { return await fn(); }
+    finally { this.busyCount -= 1; this.syncWorking(); }
   }
 
   /** Live history + token analytics over recent session logs. */
@@ -321,32 +351,37 @@ export class Session {
 
   /** Fold new agent activity into the PRD. Advances the checkpoint only on success. */
   private async ingestNow(): Promise<void> {
-    try {
-      const batch = await this.reader.readNew(this.checkpoint);
-      if (!batch.excerpt.trim()) return;
-      const current = await this.store.read();
-      const diff = await this.gitDiff(this.cwd);
-      const raw = await this.runner.complete(buildSyncPrompt(current, batch.excerpt, diff));
-      const applied = await applySpecUpdate(this.store, raw, current);
-      if (applied.ok) {
-        this.checkpoint = { ...this.checkpoint, ...batch.advanced };
-        await this.ingest.save(this.checkpoint);
-        this.broadcaster.broadcast('spec-updated', applied.result);
+    this.pendingActivity = false; // now actively processing
+    await this.runBusy(async () => {
+      try {
+        const batch = await this.reader.readNew(this.checkpoint);
+        if (!batch.excerpt.trim()) return;
+        const current = await this.store.read();
+        const diff = await this.gitDiff(this.cwd);
+        const raw = await this.runner.complete(buildSyncPrompt(current, batch.excerpt, diff));
+        const applied = await applySpecUpdate(this.store, raw, current);
+        if (applied.ok) {
+          this.checkpoint = { ...this.checkpoint, ...batch.advanced };
+          await this.ingest.save(this.checkpoint);
+          this.broadcaster.broadcast('spec-updated', applied.result);
+        }
+      } catch {
+        // best-effort; keep the last good PRD and retry the activity next time
       }
-    } catch {
-      // best-effort; keep the last good PRD and retry the activity next time
-    }
+    });
   }
 
   /** Apply a user curation instruction to the PRD immediately. */
   async curate(instruction: string): Promise<void> {
     const text = instruction.trim();
     if (!text) return;
-    const current = await this.store.read();
-    const diff = await this.gitDiff(this.cwd);
-    const raw = await this.runner.complete(buildCuratePrompt(current, text, diff));
-    const applied = await applySpecUpdate(this.store, raw, current);
-    if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+    await this.runBusy(async () => {
+      const current = await this.store.read();
+      const diff = await this.gitDiff(this.cwd);
+      const raw = await this.runner.complete(buildCuratePrompt(current, text, diff));
+      const applied = await applySpecUpdate(this.store, raw, current);
+      if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+    });
   }
 
   /** Reset & re-organize the *product doc*: discard the current PRD and rebuild it
@@ -354,21 +389,23 @@ export class Session {
    *  Decisions are not touched here — they refresh on open (see ensureDecisions).
    *  Then resume incremental ingest from "now". */
   async rebuild(): Promise<void> {
-    const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS).catch(() => '');
+    await this.runBusy(async () => {
+      const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS).catch(() => '');
 
-    // product doc — rebuilt from the codebase (the truth of what's actually built)
-    let nextDoc = DEFAULT_SPEC;
-    try {
-      nextDoc = await this.buildDocFromCode(excerpt);
-    } catch {
-      nextDoc = DEFAULT_SPEC;
-    }
-    const previous = await this.store.read();
-    const applied = await applySpecUpdate(this.store, nextDoc, previous);
+      // product doc — rebuilt from the codebase (the truth of what's actually built)
+      let nextDoc = DEFAULT_SPEC;
+      try {
+        nextDoc = await this.buildDocFromCode(excerpt);
+      } catch {
+        nextDoc = DEFAULT_SPEC;
+      }
+      const previous = await this.store.read();
+      const applied = await applySpecUpdate(this.store, nextDoc, previous);
 
-    this.checkpoint = await this.reader.currentOffsets();
-    await this.ingest.save(this.checkpoint);
-    if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+      this.checkpoint = await this.reader.currentOffsets();
+      await this.ingest.save(this.checkpoint);
+      if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+    });
   }
 
   /** Deep, code-grounded product doc. Reads the whole project (bounded), extracts

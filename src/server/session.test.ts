@@ -173,6 +173,26 @@ describe('Session (observer)', () => {
     expect(await store.read()).toContain('## 개요');
   });
 
+  it('reports "working" status around an LLM op', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write(DOC);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const runner = { complete: async () => { await gate; return DOC; } };
+    session = new Session({ store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    const statuses: boolean[] = [];
+    session.broadcaster.subscribe((ev, d) => { if (ev === 'status') statuses.push((d as { working: boolean }).working); });
+
+    const p = session.curate('add a risks section');
+    await Promise.resolve();
+    expect(session.isWorking()).toBe(true);   // busy while the LLM call is in flight
+    expect(statuses[0]).toBe(true);
+    release();
+    await p;
+    expect(session.isWorking()).toBe(false);  // idle again afterward
+    expect(statuses[statuses.length - 1]).toBe(false);
+  });
+
   it('generateMockup embeds the real CSS verbatim and wraps the LLM body fragment', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write('## 개요\n앱\n');

@@ -45,6 +45,9 @@ body { margin: 0; background: #e9e6dd; }
 .tl-toprow { display: flex; align-items: center; gap: 12px; padding: 16px 22px 8px; flex: 0 0 auto; }
 .tl-toprow .wm { font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
 .tl-toprow .tl-cwd { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--inset); }
+.tl-toprow .tl-working { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-2); font-family: var(--font-mono); }
+.tl-toprow .tl-working .dot { width: 7px; height: 7px; border-radius: 50%; background: #2f9e44; box-shadow: 0 0 0 0 rgba(47,158,68,.5); animation: tl-pulse 1.4s ease-out infinite; }
+@keyframes tl-pulse { 0% { box-shadow: 0 0 0 0 rgba(47,158,68,.5); } 70% { box-shadow: 0 0 0 6px rgba(47,158,68,0); } 100% { box-shadow: 0 0 0 0 rgba(47,158,68,0); } }
 .tl-toprow .sp { flex: 1; }
 
 /* toprow rebuild button */
@@ -103,18 +106,18 @@ body { margin: 0; background: #e9e6dd; }
 .tl-tok-big { font-size: 34px; font-weight: 650; letter-spacing: -0.03em; }
 .tl-tok-big small { font-size: 15px; font-weight: 500; color: var(--text-3); margin-left: 6px; }
 .tl-tok-cost { font-family: var(--font-mono); font-size: 13px; color: var(--text-2); }
-.tl-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 26px; max-width: 880px; }
+.tl-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 26px; }
 .tl-stat { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
 .tl-stat .k { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
 .tl-stat .v { font-size: 21px; font-weight: 600; margin-top: 6px; letter-spacing: -0.02em; }
-.tl-bars { display: flex; flex-direction: column; gap: 11px; max-width: 560px; }
+.tl-bars { display: flex; flex-direction: column; gap: 11px; }
 .tl-bar-row { display: flex; align-items: center; gap: 12px; }
 .tl-bar-row .lbl { flex: 0 0 56px; font-family: var(--font-mono); font-size: 12px; color: var(--text-2); }
 .tl-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--inset); overflow: hidden; }
 .tl-bar > i { display: block; height: 100%; background: var(--solid); border-radius: 4px; }
 .tl-bar-row .val { flex: 0 0 60px; text-align: right; font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
 
-.tl-hist-list { max-width: 680px; display: flex; flex-direction: column; gap: 8px; }
+.tl-hist-list { display: flex; flex-direction: column; gap: 8px; }
 .tl-hist-card { display: flex; gap: 14px; padding: 12px 14px; text-align: left; width: 100%; border: 1px solid var(--border); border-radius: 11px; background: var(--panel); font: inherit; cursor: pointer; transition: background .12s, border-color .12s; }
 .tl-hist-card:hover { background: var(--inset); border-color: var(--border-2); }
 .tl-hist-time { flex: 0 0 84px; font-family: var(--font-mono); font-size: 11px; color: var(--text-3); padding-top: 2px; }
@@ -142,7 +145,7 @@ body { margin: 0; background: #e9e6dd; }
 .tl-msg .tool b { color: var(--text); font-weight: 600; }
 
 /* ===== decisions timeline ===== */
-.tl-timeline { position: relative; max-width: 680px; margin-top: 6px; padding-left: 4px; }
+.tl-timeline { position: relative; margin-top: 6px; padding-left: 4px; }
 .tl-timeline::before { content: ""; position: absolute; left: 96px; top: 6px; bottom: 6px; width: 1px; background: var(--border-2); }
 .tl-tl-node { position: relative; display: flex; align-items: flex-start; gap: 16px; width: 100%; text-align: left; background: none; border: none; font: inherit; padding: 9px 8px 9px 0; cursor: pointer; border-radius: 9px; }
 .tl-tl-node:hover { background: var(--inset); }
@@ -161,7 +164,7 @@ body { margin: 0; background: #e9e6dd; }
 
 /* ===== document (PRD) ===== */
 .tl-doc { flex: 1; overflow: auto; padding: 6px 26px 26px; }
-.tl-doc-inner { max-width: 600px; }
+.tl-doc-inner { max-width: none; }
 .tl-kicker { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 12px; }
 .tl-doc-inner > p:only-child { color: var(--text-3); }
 .tl-doc h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.025em; margin: 0 0 16px; }

@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { rebuild, fetchMockup, generateMockup, fetchInfo, type Analytics } from './api';
+import { rebuild, fetchMockup, generateMockup, fetchInfo, subscribeStatus, type Analytics } from './api';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
@@ -39,11 +39,13 @@ export function MainView({
   const [mockupHtml, setMockupHtml] = useState<string | null>(null);
   const [mockupBusy, setMockupBusy] = useState(false);
   const [info, setInfo] = useState<{ cwd: string; display: string } | null>(null);
+  const [working, setWorking] = useState(false);
 
   useEffect(() => {
     let alive = true;
     fetchInfo().then((i) => { if (alive) setInfo(i); }).catch(() => {});
-    return () => { alive = false; };
+    const unsub = subscribeStatus((w) => { if (alive) setWorking(w); });
+    return () => { alive = false; unsub(); };
   }, []);
 
   useEffect(() => {
@@ -70,6 +72,7 @@ export function MainView({
       <div className="tl-toprow">
         <span className="wm">Throughline</span>
         {info?.display ? <span className="tl-cwd" title={info.cwd}>{shortenPath(info.display)}</span> : null}
+        {working ? <span className="tl-working"><span className="dot" />Working…</span> : null}
         <span className="sp" />
         {activeView === 'mockup' ? (
           <button className="tl-gen" type="button" onClick={() => void genMockup()} disabled={mockupBusy}>
