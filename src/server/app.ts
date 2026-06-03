@@ -44,12 +44,12 @@ export function createApp(session: Session): Hono {
     return detail ? c.json(detail) : c.json({ error: 'not found' }, 404);
   });
 
-  // stale-while-revalidate: return the cached doc instantly, refresh in the
-  // background if stale (result arrives via the 'decisions-updated' SSE event).
+  // stale-while-revalidate: return the cached ledger instantly, extend it in the
+  // background if there are new turns (result arrives via 'decisions-updated' SSE).
   app.get('/api/decisions', async (c) => {
-    const md = await session.readDecisions();
+    const items = await session.readDecisions();
     const refreshing = await session.refreshDecisionsIfStale();
-    return c.json({ md, refreshing });
+    return c.json({ items, refreshing });
   });
 
   app.get('/api/mockup', async (c) => c.json({ html: await session.readMockup() }));

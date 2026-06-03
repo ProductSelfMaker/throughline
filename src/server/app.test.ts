@@ -99,10 +99,10 @@ describe('GET /api/info', () => {
 });
 
 describe('GET /api/decisions', () => {
-  it('returns the cached decisions doc + refreshing flag ("" / false when none yet)', async () => {
+  it('returns the cached decisions ledger + refreshing flag ([] / false when none yet)', async () => {
     session = mk();
     const res = await createApp(session).request('/api/decisions');
-    expect(await res.json()).toEqual({ md: '', refreshing: false });
+    expect(await res.json()).toEqual({ items: [], refreshing: false });
   });
 });
 

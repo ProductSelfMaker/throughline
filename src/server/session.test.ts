@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Session } from './session';
-import { ActivityBatch, ActivityReader, ScribeResult } from '../domain/types';
+import { ActivityBatch, ActivityReader, ScribeResult, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
 
 const DOC = `## 개요\n로그인 중심 서비스.\n\n## 로그인\n**무엇** 이메일·비밀번호 인증.\n\n## 열린 질문\n- 결제?\n`;
 
@@ -22,8 +22,8 @@ class FakeReader implements ActivityReader {
   async analyze() {
     return { tokens: { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0, tools: 0, perDay: [] }, history: [], approx: false };
   }
-  async listWorkItems() { return []; }
-  async readWorkItem() { return null; }
+  async listWorkItems(_limit: number): Promise<WorkItem[]> { return []; }
+  async readWorkItem(_file: string, _start: number, _end: number): Promise<WorkItemDetail | null> { return null; }
   watch(): () => void { return () => {}; }
 }
 const completer = (reply: string) => ({ complete: async () => reply });
@@ -109,37 +109,55 @@ describe('Session (observer)', () => {
     expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 77 });
   });
 
-  it('refreshDecisionsIfStale: background-regenerates on change, serves cache when unchanged', async () => {
+  it('decisions ledger: accumulates new decisions from new turns, dedupes, links source & supersedes', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     let offsets: Record<string, number> = { '/x/s1.jsonl': 10 };
-    const reader = new FakeReader({ excerpt: '', advanced: {} }, {}, '사용자: 로그인 결정');
-    reader.currentOffsets = async () => offsets; // mutable for the test
+    // mutable set of work-item turns the reader exposes
+    let turns = [
+      { id: 'a', file: 's1', start: 0, end: 50, title: 'chat 모델로 가자', time: 100, tools: 0, tokens: 0 },
+    ];
+    const reader = new FakeReader({ excerpt: '', advanced: {} }, {});
+    reader.currentOffsets = async () => offsets;
+    reader.listWorkItems = async () => turns;
+    reader.readWorkItem = async (_file: string, start: number): Promise<WorkItemDetail> =>
+      ({ title: '', time: 0, tokens: 0, filesTouched: [], messages: [{ role: 'user', text: `turn@${start}`, tools: [] }] });
+
     let calls = 0;
-    const runner = { complete: async () => { calls += 1; return `## 의사결정 ${calls}`; } };
+    const replies = [
+      '[{"turn":0,"what":"Use a chat model","why":"simple","alternatives":"","supersedes":""}]',
+      '[{"turn":0,"what":"Pivot to observer","why":"terminal has the agent","alternatives":"keep chat","supersedes":"Use a chat model"}]',
+    ];
+    const runner = { complete: async () => replies[Math.min(calls++, replies.length - 1)] };
     session = new Session({
       store, runner, reader, ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
-      decisionsCooldownMs: 0, // pure mark-based staleness for the test
+      decisionsCooldownMs: 0,
     });
-    const nextUpdate = () => new Promise<string>((res) => {
-      const off = session!.broadcaster.subscribe((ev, d) => { if (ev === 'decisions-updated') { off?.(); res((d as { md: string }).md); } });
+    const nextUpdate = () => new Promise<DecisionItem[]>((res) => {
+      const off = session!.broadcaster.subscribe((ev, d) => { if (ev === 'decisions-updated') { off?.(); res((d as { items: DecisionItem[] }).items); } });
     });
 
-    // first open: no cache → background refresh kicked off, result broadcast
+    // first refresh → one decision, with a source link
     let upd = nextUpdate();
     expect(await session.refreshDecisionsIfStale()).toBe(true);
-    expect(await upd).toBe('## 의사결정 1');
-    expect(await session.readDecisions()).toBe('## 의사결정 1');
+    let items = await upd;
+    expect(items.map((d) => d.what)).toEqual(['Use a chat model']);
+    expect(items[0].source).toEqual({ file: 's1', start: 0, end: 50 });
     expect(calls).toBe(1);
 
-    // same offsets → not stale → serves cache, no LLM
+    // no new turns → not stale → no LLM
     expect(await session.refreshDecisionsIfStale()).toBe(false);
     expect(calls).toBe(1);
 
-    // new activity → background refresh again
+    // a newer turn arrives → extends the ledger; old decision is kept; supersedes resolves
     offsets = { '/x/s1.jsonl': 99 };
+    turns = [...turns, { id: 'b', file: 's1', start: 60, end: 120, title: '옵저버로 피봇', time: 200, tools: 0, tokens: 0 }];
     upd = nextUpdate();
     expect(await session.refreshDecisionsIfStale()).toBe(true);
-    expect(await upd).toBe('## 의사결정 2');
+    items = await upd;
+    expect(items.map((d) => d.what)).toEqual(['Use a chat model', 'Pivot to observer']); // accumulated
+    const pivot = items[1];
+    expect(pivot.supersedes).toBe(items[0].id);            // resolved to the earlier decision
+    expect(pivot.source).toEqual({ file: 's1', start: 60, end: 120 });
     expect(calls).toBe(2);
   });
 

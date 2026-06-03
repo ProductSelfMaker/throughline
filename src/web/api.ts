@@ -1,8 +1,8 @@
 // src/web/api.ts
-import type { Analytics, WorkItem, WorkItemDetail } from '../domain/types';
+import type { Analytics, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
 
 export type SpecUpdate = { md: string; changedLines: number[] };
-export type { Analytics, WorkItem, WorkItemDetail };
+export type { Analytics, WorkItem, WorkItemDetail, DecisionItem };
 
 /** Recent work items (history cards). */
 export async function fetchWorkItems(limit = 100): Promise<WorkItem[]> {
@@ -58,18 +58,18 @@ export async function rebuild(): Promise<void> {
   if (!res.ok) throw new Error(`rebuild failed (${res.status})`);
 }
 
-/** The cached decisions doc + whether a background refresh was started. */
-export async function fetchDecisions(): Promise<{ md: string; refreshing: boolean }> {
+/** The cached decisions ledger + whether a background refresh was started. */
+export async function fetchDecisions(): Promise<{ items: DecisionItem[]; refreshing: boolean }> {
   const res = await fetch('/api/decisions');
-  if (!res.ok) return { md: '', refreshing: false };
-  const data = (await res.json()) as { md?: string; refreshing?: boolean };
-  return { md: data.md ?? '', refreshing: data.refreshing ?? false };
+  if (!res.ok) return { items: [], refreshing: false };
+  const data = (await res.json()) as { items?: DecisionItem[]; refreshing?: boolean };
+  return { items: data.items ?? [], refreshing: data.refreshing ?? false };
 }
 
-/** Subscribe to background decisions refreshes (SSE 'decisions-updated'). */
-export function subscribeDecisions(onUpdate: (md: string) => void): () => void {
+/** Subscribe to background decisions-ledger updates (SSE 'decisions-updated'). */
+export function subscribeDecisions(onUpdate: (items: DecisionItem[]) => void): () => void {
   const es = new EventSource('/api/events');
-  es.addEventListener('decisions-updated', (e) => onUpdate(JSON.parse((e as MessageEvent).data).md));
+  es.addEventListener('decisions-updated', (e) => onUpdate(JSON.parse((e as MessageEvent).data).items ?? []));
   return () => es.close();
 }
 

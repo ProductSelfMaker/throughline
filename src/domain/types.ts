@@ -65,6 +65,17 @@ export interface WorkItemDetail {
   messages: WorkMessage[];
 }
 
+/** One decision in the accumulating decisions ledger (shown on the timeline). */
+export interface DecisionItem {
+  id: string;
+  what: string;          // what was decided (title)
+  why: string;
+  alternatives: string;  // rejected option(s), may be empty
+  time: number;          // epoch ms (from the source turn)
+  supersedes?: string;   // id of a prior decision this reverses/replaces
+  source?: { file: string; start: number; end: number }; // origin turn (→ history detail)
+}
+
 /** Aggregate token usage for the tokens view. */
 export interface TokenStats {
   total: number;

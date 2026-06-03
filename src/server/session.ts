@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail } from '../domain/types';
+import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
@@ -12,7 +12,7 @@ import { Broadcaster } from './broadcaster';
 import { buildFlowPrompt } from '../domain/flow-prompt';
 import { buildSyncPrompt } from '../domain/sync-prompt';
 import { buildCuratePrompt } from '../domain/curate-prompt';
-import { buildDecisionsPrompt } from '../domain/decisions-prompt';
+import { buildDecisionsExtractPrompt, parseDecisions } from '../domain/decisions-prompt';
 import { buildMockupPrompt } from '../domain/mockup-prompt';
 import { assembleMockupHtml } from '../domain/mockup-html';
 import { collectUiSource, UiSource } from '../agent/project-ui-source';
@@ -42,6 +42,19 @@ async function pool<T, R>(items: T[], limit: number, fn: (t: T, i: number) => Pr
   await Promise.all(workers);
   return out;
 }
+// Decisions ledger (accumulating). Built incrementally from new work-item turns.
+const DECISIONS_TURN_LIMIT = 120;       // recent turns considered per refresh
+const DECISIONS_MAX_NEW = 40;           // max new turns processed per refresh
+const DECISIONS_TRANSCRIPT_MAX = 30_000; // chars of transcript fed to the extractor
+
+const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
+const normWhat = (s: string): string => s.toLowerCase().replace(/\s+/g, ' ').trim();
+function hashId(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return 'd' + (h >>> 0).toString(36);
+}
+
 const joinLen = (parts: string[]): number => parts.reduce((n, p) => n + p.length + 2, 0);
 function batchByBudget(parts: string[], budget: number): string[][] {
   const batches: string[][] = [];
@@ -122,7 +135,7 @@ export class Session {
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
     this.uiSource = deps.uiSource ?? collectUiSource;
     this.projectCode = deps.projectCode ?? collectProjectFiles;
-    this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.md');
+    this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.json');
     this.decisionsStatePath = join(deps.cwd, '.throughline', 'decisions-state.json');
     this.decisionsCooldownMs = deps.decisionsCooldownMs ?? 180_000;
     this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
@@ -154,69 +167,112 @@ export class Session {
     return this.readMockup();
   }
 
-  /** The latest generated decisions doc ('' if none yet). */
-  async readDecisions(): Promise<string> {
-    try { return existsSync(this.decisionsPath) ? await readFile(this.decisionsPath, 'utf8') : ''; }
-    catch { return ''; }
+  /** The accumulating decisions ledger (chronological list; [] if none yet). */
+  async readDecisions(): Promise<DecisionItem[]> {
+    try {
+      const raw = existsSync(this.decisionsPath) ? await readFile(this.decisionsPath, 'utf8') : '';
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? (arr as DecisionItem[]) : [];
+    } catch { return []; }
   }
-
-  private async writeDecisions(md: string): Promise<void> {
+  private async writeDecisions(items: DecisionItem[]): Promise<void> {
     await mkdir(dirname(this.decisionsPath), { recursive: true });
-    await writeFile(this.decisionsPath, md, 'utf8');
+    await writeFile(this.decisionsPath, JSON.stringify(items, null, 2), 'utf8');
+  }
+  /** Ledger rendered as markdown — used as "why" context for the doc rebuild. */
+  private async decisionsAsText(): Promise<string> {
+    const items = await this.readDecisions();
+    return items.map((d) => `## ${d.what}\n- why: ${d.why}${d.alternatives ? `\n- alternatives: ${d.alternatives}` : ''}`).join('\n\n');
   }
 
-  /** A cheap monotonic "have logs changed" marker (sum of current byte offsets). */
+  /** A cheap "have logs changed" gate (sum of current byte offsets). */
   private async activityMark(): Promise<number> {
     try { return Object.values(await this.reader.currentOffsets()).reduce((a, b) => a + b, 0); }
     catch { return -1; }
   }
-  private async readDecisionsState(): Promise<{ mark: number; ts: number } | null> {
+  private async readDecisionsState(): Promise<{ mark: number; ts: number; lastTime: number }> {
     try {
       const s = JSON.parse(await readFile(this.decisionsStatePath, 'utf8'));
-      return { mark: s.mark ?? -1, ts: s.ts ?? 0 };
-    } catch { return null; }
+      return { mark: s.mark ?? -1, ts: s.ts ?? 0, lastTime: s.lastTime ?? 0 };
+    } catch { return { mark: -1, ts: 0, lastTime: 0 }; }
   }
-  private async writeDecisionsState(mark: number, ts: number): Promise<void> {
+  private async writeDecisionsState(s: { mark: number; ts: number; lastTime: number }): Promise<void> {
     try {
       await mkdir(dirname(this.decisionsStatePath), { recursive: true });
-      await writeFile(this.decisionsStatePath, JSON.stringify({ mark, ts }), 'utf8');
+      await writeFile(this.decisionsStatePath, JSON.stringify(s), 'utf8');
     } catch { /* best-effort */ }
   }
 
-  /** Decide whether decisions are stale and, if so, regenerate in the BACKGROUND.
-   *  Returns true if a refresh was kicked off (the view shows cached meanwhile and
-   *  gets the result via a 'decisions-updated' broadcast). Cheap checks only —
-   *  never blocks on the LLM. A cooldown avoids re-spending tokens on rapid reopens
-   *  (in active use the logs change constantly, so mark alone would always fire). */
+  /** Stale-while-revalidate gate: if new turns exist (and past cooldown), extend the
+   *  ledger in the BACKGROUND. Returns true if a refresh was kicked off (the view
+   *  shows the cached ledger meanwhile and gets the result via 'decisions-updated'). */
   async refreshDecisionsIfStale(now: number = Date.now()): Promise<boolean> {
     try {
-      const existing = await this.readDecisions();
+      const ledger = await this.readDecisions();
       const mark = await this.activityMark();
-      if (!existing && mark <= 0) return false; // nothing cached and no activity to extract
+      if (!ledger.length && mark <= 0) return false; // nothing yet and no activity
       const state = await this.readDecisionsState();
-      if (existing) {
-        if (state && state.mark === mark) return false;                       // nothing new
-        if (state && now - state.ts < this.decisionsCooldownMs) return false; // throttled
+      if (ledger.length) {
+        if (state.mark === mark) return false;                        // nothing changed
+        if (now - state.ts < this.decisionsCooldownMs) return false;  // throttled
       }
-      void this.regenerateDecisions(mark, now);
+      void this.extendDecisions(now, mark);
       return true;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   }
 
-  private async regenerateDecisions(mark: number, now: number): Promise<void> {
+  /** Extract decisions from turns newer than the last processed time, dedupe against
+   *  the ledger, append, and broadcast. Reuses work-item turns so each decision links
+   *  back to its source conversation. Accumulates — old decisions are never dropped. */
+  private async extendDecisions(now: number, mark: number): Promise<void> {
     try {
-      const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS).catch(() => '');
-      if (!excerpt.trim()) return;
-      const dec = await this.runner.complete(buildDecisionsPrompt(excerpt));
-      if (dec.trim()) {
-        await this.writeDecisions(dec);
-        await this.writeDecisionsState(mark, now);
-        this.broadcaster.broadcast('decisions-updated', { md: dec });
+      const state = await this.readDecisionsState();
+      const ledger = await this.readDecisions();
+      const turns = await this.reader.listWorkItems(DECISIONS_TURN_LIMIT);
+      const fresh = turns
+        .filter((t) => t.time > state.lastTime)
+        .sort((a, b) => a.time - b.time) // oldest → newest; catch up over refreshes
+        .slice(0, DECISIONS_MAX_NEW);
+      if (!fresh.length) { await this.writeDecisionsState({ mark, ts: now, lastTime: state.lastTime }); return; }
+
+      // compact numbered transcript from the fresh turns (prompt + assistant text)
+      const parts: string[] = [];
+      const used: typeof fresh = [];
+      let chars = 0;
+      for (const t of fresh) {
+        const d = await this.reader.readWorkItem(t.file, t.start, t.end).catch(() => null);
+        const userText = d?.messages.filter((m) => m.role === 'user').map((m) => m.text).join(' / ') || t.title;
+        const aiText = (d?.messages.filter((m) => m.role === 'assistant').map((m) => m.text).filter(Boolean).join(' ')) || '';
+        const block = `[#${used.length}] User: ${clip(userText, 400)}${aiText ? `\nAI: ${clip(aiText, 600)}` : ''}`;
+        if (chars + block.length > DECISIONS_TRANSCRIPT_MAX) break;
+        parts.push(block); used.push(t); chars += block.length;
       }
+      const advancedTo = (used.length ? used[used.length - 1] : fresh[fresh.length - 1]).time;
+      if (!used.length) { await this.writeDecisionsState({ mark, ts: now, lastTime: advancedTo }); return; }
+
+      const raw = await this.runner.complete(buildDecisionsExtractPrompt(parts.join('\n\n'), ledger.map((d) => d.what)));
+      const seen = new Set(ledger.map((d) => normWhat(d.what)));
+      for (const p of parseDecisions(raw)) {
+        const what = p.what.trim();
+        if (!what || seen.has(normWhat(what))) continue;
+        seen.add(normWhat(what));
+        const turn = used[p.turn] ?? used[used.length - 1];
+        const supersedes = p.supersedes ? ledger.find((d) => normWhat(d.what) === normWhat(p.supersedes))?.id : undefined;
+        ledger.push({
+          id: hashId(what),
+          what,
+          why: p.why.trim(),
+          alternatives: p.alternatives.trim(),
+          time: turn?.time ?? now,
+          ...(supersedes ? { supersedes } : {}),
+          ...(turn ? { source: { file: turn.file, start: turn.start, end: turn.end } } : {}),
+        });
+      }
+      await this.writeDecisions(ledger);
+      await this.writeDecisionsState({ mark, ts: now, lastTime: advancedTo });
+      this.broadcaster.broadcast('decisions-updated', { items: ledger });
     } catch {
-      // keep the previous decisions doc
+      // keep the previous ledger
     }
   }
 
@@ -336,7 +392,7 @@ export class Session {
     const ctx: DocContext = {
       manifest: files.find((f) => /(^|\/)package\.json$/i.test(f.path))?.content,
       readme: files.find((f) => /(^|\/)readme(\.[a-z]+)?$/i.test(f.path))?.content,
-      decisions: await this.readDecisions().catch(() => ''),
+      decisions: await this.decisionsAsText().catch(() => ''),
       activity: activityExcerpt,
       truncated,
     };

@@ -137,6 +137,24 @@ body { margin: 0; background: #e9e6dd; }
 .tl-msg .tool { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); margin-top: 6px; padding: 4px 8px; background: var(--inset-2); border-radius: 6px; word-break: break-all; }
 .tl-msg .tool b { color: var(--text); font-weight: 600; }
 
+/* ===== decisions timeline ===== */
+.tl-timeline { position: relative; max-width: 680px; margin-top: 6px; padding-left: 4px; }
+.tl-timeline::before { content: ""; position: absolute; left: 96px; top: 6px; bottom: 6px; width: 1px; background: var(--border-2); }
+.tl-tl-node { position: relative; display: flex; align-items: flex-start; gap: 16px; width: 100%; text-align: left; background: none; border: none; font: inherit; padding: 9px 8px 9px 0; cursor: pointer; border-radius: 9px; }
+.tl-tl-node:hover { background: var(--inset); }
+.tl-tl-time { flex: 0 0 84px; font-family: var(--font-mono); font-size: 11px; color: var(--text-3); padding-top: 2px; }
+.tl-tl-dot { position: absolute; left: 92px; top: 13px; width: 9px; height: 9px; border-radius: 50%; background: var(--solid); box-shadow: 0 0 0 3px var(--panel); }
+.tl-tl-body { min-width: 0; padding-left: 14px; }
+.tl-tl-body .t { font-size: 14px; font-weight: 550; color: var(--text); }
+.tl-tl-body .repl { display: block; margin-top: 4px; font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.tl-tl-body .repl::before { content: "⤷ replaces: "; }
+
+/* decision detail fields */
+.tl-dec-field { margin: 0 0 14px; }
+.tl-dec-field .k, .tl-dec-source .k { display: block; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin-bottom: 5px; }
+.tl-dec-field p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--text-2); }
+.tl-dec-source { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+
 /* ===== document (PRD) ===== */
 .tl-doc { flex: 1; overflow: auto; padding: 6px 26px 26px; }
 .tl-doc-inner { max-width: 600px; }

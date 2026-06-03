@@ -1,16 +1,57 @@
 // src/domain/decisions-prompt.ts
-export function buildDecisionsPrompt(activityExcerpt: string): string {
+// Decisions are extracted incrementally from new conversation turns and appended to
+// an accumulating ledger. The extractor returns JSON so each decision can be linked
+// to its source turn and (optionally) the earlier decision it supersedes.
+
+export interface ParsedDecision {
+  turn: number;
+  what: string;
+  why: string;
+  alternatives: string;
+  supersedes: string; // the "what" of an already-recorded decision, or ''
+}
+
+export function buildDecisionsExtractPrompt(transcript: string, existing: string[]): string {
   return [
-    'Extract the *key decisions* from the activity log below and organize them as markdown.',
-    'Give each decision a "## <decision summary>" heading with one line each for: what (what was decided), why (the reason), and alternatives (what was rejected, if any).',
-    'Include only decisions that were actually made. Exclude minor steps, work logs, and implementation details.',
-    'LANGUAGE: write the content in the same language the user uses in the activity below. Do not translate it.',
+    'You extract *decisions* from a development conversation and return them as JSON.',
+    'A decision = a deliberate choice about the product or approach: what was decided, why, and which alternative was rejected.',
+    'Only genuine decisions — not routine steps, code edits, bug fixes, or questions.',
     '',
-    'Activity:',
+    'Already-recorded decisions (do NOT repeat these; output only NEW ones, including any that REVERSE one of these):',
     '"""',
-    activityExcerpt || '(none)',
+    existing.length ? existing.map((e, i) => `${i + 1}. ${e}`).join('\n') : '(none yet)',
     '"""',
     '',
-    'Output markdown only — no commentary, no code fences (```).',
+    'Conversation turns, each tagged [#n]:',
+    '"""',
+    transcript,
+    '"""',
+    '',
+    'Output a JSON array and nothing else. Each element:',
+    '{"turn": <the [#n] this decision came from>, "what": "<one line>", "why": "<one line>", "alternatives": "<rejected option or empty>", "supersedes": "<the exact \\"what\\" text of an already-recorded decision this reverses/replaces, or empty>"}',
+    'Write what / why / alternatives in the SAME language the conversation uses. If there are no new decisions, output exactly [].',
   ].join('\n');
+}
+
+/** Defensively parse the extractor's JSON array (tolerates fences / surrounding text). */
+export function parseDecisions(raw: string): ParsedDecision[] {
+  let text = raw.trim();
+  const fence = /```[a-z]*\n([\s\S]*?)\n```/i.exec(text);
+  if (fence) text = fence[1].trim();
+  const start = text.indexOf('[');
+  const end = text.lastIndexOf(']');
+  if (start === -1 || end === -1 || end < start) return [];
+  try {
+    const arr = JSON.parse(text.slice(start, end + 1));
+    if (!Array.isArray(arr)) return [];
+    return arr.map((o) => ({
+      turn: Number(o?.turn) || 0,
+      what: String(o?.what ?? ''),
+      why: String(o?.why ?? ''),
+      alternatives: String(o?.alternatives ?? ''),
+      supersedes: String(o?.supersedes ?? ''),
+    }));
+  } catch {
+    return [];
+  }
 }
