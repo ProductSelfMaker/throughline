@@ -23,6 +23,15 @@ function shortenPath(p: string, max = 52): string {
   return p.length <= max ? p : '…' + p.slice(p.length - max + 1);
 }
 
+/** Header label per view — shown identically on every page. */
+const VIEW_LABEL: Record<ViewId, string> = {
+  doc: 'Document',
+  history: 'History',
+  decisions: 'Decisions',
+  tokens: 'Tokens',
+  mockup: 'Mockup',
+};
+
 export function MainView({
   activeView,
   md,
@@ -85,10 +94,11 @@ export function MainView({
         </button>
       </div>
 
+      <div className="tl-viewhead">{VIEW_LABEL[activeView]}</div>
+
       {activeView === 'doc' ? (
         <div className="tl-doc">
           <div className="tl-doc-inner">
-            <div className="tl-kicker">Product doc · auto-generated</div>
             {md.trim() ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripFrontmatter(md)}</ReactMarkdown>
             ) : (

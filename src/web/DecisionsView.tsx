@@ -56,7 +56,6 @@ export function DecisionsView() {
 
   return (
     <div className="tl-pad">
-      <div className="tl-kicker">Decisions · timeline{refreshing ? ' · refreshing…' : ''}</div>
       <div className="tl-timeline">
         {ordered.map((d) => {
           const superseded = d.supersedes ? byId.get(d.supersedes) : undefined;
