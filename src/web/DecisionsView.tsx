@@ -65,6 +65,7 @@ export function DecisionsView() {
               <span className="tl-tl-time">{when(d.time)}</span>
               <span className="tl-tl-body">
                 <span className="t">{d.what}</span>
+                {d.why ? <span className="why">{d.why}</span> : null}
                 {superseded ? <span className="repl">{superseded.what}</span> : null}
               </span>
             </button>

@@ -15,7 +15,8 @@ export function buildDecisionsExtractPrompt(transcript: string, existing: string
   return [
     'You extract *decisions* from a development conversation and return them as JSON.',
     'A decision = a deliberate choice about the product or approach: what was decided, why, and which alternative was rejected.',
-    'Only genuine decisions — not routine steps, code edits, bug fixes, or questions.',
+    'Only genuine decisions — not routine steps, code edits, bug fixes, tasks, or questions. Be selective: most turns contain NO decision.',
+    'The "what" must state the chosen OUTCOME (e.g. "Decisions accumulate on a timeline"), not restate the user\'s request or task. If a turn is just a request/instruction with no settled choice, skip it.',
     '',
     'Already-recorded decisions (do NOT repeat these; output only NEW ones, including any that REVERSE one of these):',
     '"""',
