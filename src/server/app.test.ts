@@ -107,13 +107,14 @@ describe('GET /api/decisions', () => {
 });
 
 describe('GET /api/analytics', () => {
-  it('returns tokens + history', async () => {
+  it('returns tokens + history + overhead (null when the runner has no usage)', async () => {
     session = mk();
     const res = await createApp(session).request('/api/analytics');
     expect(await res.json()).toEqual({
       tokens: { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0, tools: 0, perDay: [] },
       history: [],
       approx: false,
+      overhead: null,
     });
   });
 });

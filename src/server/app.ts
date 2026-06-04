@@ -28,7 +28,7 @@ export function createApp(session: Session): Hono {
     return c.json({ ok: true });
   });
 
-  app.get('/api/analytics', async (c) => c.json(await session.analytics()));
+  app.get('/api/analytics', async (c) => c.json({ ...await session.analytics(), overhead: session.overheadTokens() }));
 
   // history: recent work items (cards) + on-demand detail for one item
   app.get('/api/history', async (c) => {

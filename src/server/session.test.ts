@@ -173,6 +173,19 @@ describe('Session (observer)', () => {
     expect(await store.read()).toContain('## 개요');
   });
 
+  it('overheadTokens reflects the runner usage (null when unavailable)', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    const reader = new FakeReader({ excerpt: '', advanced: {} });
+    const ingest = new IngestStore(dir);
+
+    const plain = new Session({ store, runner: completer(''), reader, ingest, cwd: dir, gitDiff: async () => '' });
+    expect(plain.overheadTokens()).toBeNull(); // runner without usage()
+
+    const usage = { total: 1500, input: 1000, output: 500, cacheRead: 0, cacheCreate: 0, turns: 3 };
+    const tracked = new Session({ store, runner: { complete: async () => '', usage: () => usage }, reader, ingest, cwd: dir, gitDiff: async () => '' });
+    expect(tracked.overheadTokens()).toEqual(usage);
+  });
+
   it('reports "working" status around an LLM op', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write(DOC);

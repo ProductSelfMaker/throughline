@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
+import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem, OverheadTokens } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
@@ -84,6 +84,8 @@ async function defaultGitDiff(cwd: string): Promise<string> {
 // Minimal runner surface this engine needs (one-shot completion only).
 interface Completer {
   complete(prompt: string, signal?: AbortSignal): Promise<string>;
+  /** Throughline's own token usage, if the runner tracks it. */
+  usage?(): OverheadTokens;
 }
 
 export interface SessionDeps {
@@ -333,6 +335,11 @@ export class Session {
   /** Live history + token analytics over recent session logs. */
   analytics(): Promise<Analytics> {
     return this.reader.analyze(ANALYTICS_DAYS, ANALYTICS_MAX_BYTES);
+  }
+
+  /** Throughline's OWN token usage this session (null if the runner doesn't track it). */
+  overheadTokens(): OverheadTokens | null {
+    return this.runner.usage?.() ?? null;
   }
 
   /** Recent work items (user turns) for the history view. */

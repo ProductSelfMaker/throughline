@@ -76,6 +76,17 @@ export interface DecisionItem {
   source?: { file: string; start: number; end: number }; // origin turn (→ history detail)
 }
 
+/** Throughline's OWN token usage (its scribe/sync/rebuild/mockup/decisions calls),
+ *  as opposed to the observed project's coding usage. */
+export interface OverheadTokens {
+  total: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreate: number;
+  turns: number;
+}
+
 /** Aggregate token usage for the tokens view. */
 export interface TokenStats {
   total: number;

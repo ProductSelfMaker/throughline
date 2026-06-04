@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { rebuild, fetchMockup, generateMockup, fetchInfo, subscribeStatus, type Analytics } from './api';
+import { rebuild, fetchMockup, generateMockup, fetchInfo, subscribeStatus, type AnalyticsResponse } from './api';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
@@ -40,7 +40,7 @@ export function MainView({
 }: {
   activeView: ViewId;
   md: string;
-  analytics: Analytics | null;
+  analytics: AnalyticsResponse | null;
   analyticsLoading: boolean;
 }) {
   const [confirm, setConfirm] = useState(false);

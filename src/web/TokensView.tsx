@@ -1,5 +1,5 @@
 // src/web/TokensView.tsx
-import type { Analytics } from './api';
+import type { AnalyticsResponse } from './api';
 
 function fmt(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
@@ -7,13 +7,15 @@ function fmt(n: number): string {
   return String(n);
 }
 
-export function TokensView({ analytics, loading }: { analytics: Analytics | null; loading: boolean }) {
+export function TokensView({ analytics, loading }: { analytics: AnalyticsResponse | null; loading: boolean }) {
   if (loading && !analytics) return <div className="tl-pad"><p className="tl-placeholder">Loading…</p></div>;
   if (!analytics) return <div className="tl-pad"><p className="tl-placeholder">No data.</p></div>;
   const t = analytics.tokens;
+  const ov = analytics.overhead;
   const max = Math.max(1, ...t.perDay.map((d) => d.total));
   return (
     <div className="tl-pad">
+      <p className="tl-section-h">Your Claude Code usage in this project{analytics.approx ? ' · recent ~30 days' : ''}</p>
       <div className="tl-tok-hero">
         <div className="tl-tok-big">{fmt(t.total)}<small>tokens</small></div>
         <div className="tl-tok-cost">{t.turns} turns · {t.tools} tool calls{analytics.approx ? ' · recent only' : ''}</div>
@@ -35,6 +37,21 @@ export function TokensView({ analytics, loading }: { analytics: Analytics | null
                 <span className="val">{fmt(d.total)}</span>
               </div>
             ))}
+          </div>
+        </>
+      ) : null}
+
+      {ov && ov.total > 0 ? (
+        <>
+          <p className="tl-section-h" style={{ marginTop: 28 }}>Throughline's own usage · this session</p>
+          <div className="tl-tok-cost" style={{ marginBottom: 14 }}>
+            {fmt(ov.total)} tokens · {ov.turns} calls
+          </div>
+          <div className="tl-grid4">
+            <div className="tl-stat"><div className="k">Input</div><div className="v">{fmt(ov.input)}</div></div>
+            <div className="tl-stat"><div className="k">Output</div><div className="v">{fmt(ov.output)}</div></div>
+            <div className="tl-stat"><div className="k">Cache read</div><div className="v">{fmt(ov.cacheRead)}</div></div>
+            <div className="tl-stat"><div className="k">Cache write</div><div className="v">{fmt(ov.cacheCreate)}</div></div>
           </div>
         </>
       ) : null}

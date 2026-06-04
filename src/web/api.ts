@@ -1,8 +1,10 @@
 // src/web/api.ts
-import type { Analytics, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
+import type { Analytics, WorkItem, WorkItemDetail, DecisionItem, OverheadTokens } from '../domain/types';
 
 export type SpecUpdate = { md: string; changedLines: number[] };
-export type { Analytics, WorkItem, WorkItemDetail, DecisionItem };
+export type { Analytics, WorkItem, WorkItemDetail, DecisionItem, OverheadTokens };
+/** Analytics for the observed project + Throughline's own overhead. */
+export type AnalyticsResponse = Analytics & { overhead: OverheadTokens | null };
 
 /** Recent work items (history cards). */
 export async function fetchWorkItems(limit = 100): Promise<WorkItem[]> {
@@ -28,8 +30,8 @@ export async function fetchInfo(): Promise<{ cwd: string; display: string }> {
   return { cwd: data.cwd ?? '', display: data.display ?? '' };
 }
 
-/** Live history + token analytics over recent session logs. */
-export async function fetchAnalytics(): Promise<Analytics> {
+/** Live token analytics for the observed project (+ Throughline overhead). */
+export async function fetchAnalytics(): Promise<AnalyticsResponse> {
   const res = await fetch('/api/analytics');
   if (!res.ok) throw new Error(`analytics failed (${res.status})`);
   return res.json();

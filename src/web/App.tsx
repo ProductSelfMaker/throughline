@@ -1,6 +1,6 @@
 // src/web/App.tsx
 import { useEffect, useState } from 'react';
-import { subscribeSpec, fetchAnalytics, type Analytics } from './api';
+import { subscribeSpec, fetchAnalytics, type AnalyticsResponse } from './api';
 import { MainView } from './MainView';
 import { ViewRail, type ViewId } from './ViewRail';
 import { ScribeChat } from './ScribeChat';
@@ -8,7 +8,7 @@ import { ScribeChat } from './ScribeChat';
 export function App() {
   const [activeView, setActiveView] = useState<ViewId>('doc');
   const [md, setMd] = useState('');
-  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   // Live product doc from the background scribe (session-log → doc).
