@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Session } from './session';
-import { ActivityBatch, ActivityReader, ScribeResult, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
+import { ActivityBatch, ActivityReader, ScribeResult, WorkItem, WorkItemDetail, DecisionItem, Analytics } from '../domain/types';
 
 const DOC = `## 개요\n로그인 중심 서비스.\n\n## 로그인\n**무엇** 이메일·비밀번호 인증.\n\n## 열린 질문\n- 결제?\n`;
 
@@ -19,7 +19,7 @@ class FakeReader implements ActivityReader {
   async readNew(): Promise<ActivityBatch> { return this.batch; }
   async currentOffsets(): Promise<Record<string, number>> { return this.offsets; }
   async readRecent(): Promise<string> { return this.recent; }
-  async analyze() {
+  async analyze(): Promise<Analytics> {
     return { tokens: { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0, tools: 0, perDay: [] }, history: [], approx: false };
   }
   async listWorkItems(_limit: number): Promise<WorkItem[]> { return []; }
@@ -173,17 +173,22 @@ describe('Session (observer)', () => {
     expect(await store.read()).toContain('## 개요');
   });
 
-  it('overheadTokens reflects the runner usage (null when unavailable)', async () => {
+  it('overhead() analyzes the scribe-agent logs (null without a self-reader)', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     const reader = new FakeReader({ excerpt: '', advanced: {} });
     const ingest = new IngestStore(dir);
 
     const plain = new Session({ store, runner: completer(''), reader, ingest, cwd: dir, gitDiff: async () => '' });
-    expect(plain.overheadTokens()).toBeNull(); // runner without usage()
+    expect(await plain.overhead()).toBeNull(); // no self-reader wired
 
-    const usage = { total: 1500, input: 1000, output: 500, cacheRead: 0, cacheCreate: 0, turns: 3 };
-    const tracked = new Session({ store, runner: { complete: async () => '', usage: () => usage }, reader, ingest, cwd: dir, gitDiff: async () => '' });
-    expect(tracked.overheadTokens()).toEqual(usage);
+    const selfAnalytics = {
+      tokens: { total: 999, input: 600, output: 399, cacheRead: 0, cacheCreate: 0, turns: 2, tools: 1, perDay: [{ date: '2026-06-03', total: 999 }] },
+      history: [], approx: false,
+    };
+    const selfReader = new FakeReader({ excerpt: '', advanced: {} });
+    selfReader.analyze = async () => selfAnalytics;
+    const tracked = new Session({ store, runner: completer(''), reader, selfReader, ingest, cwd: dir, gitDiff: async () => '' });
+    expect(await tracked.overhead()).toEqual(selfAnalytics);
   });
 
   it('reports "working" status around an LLM op', async () => {

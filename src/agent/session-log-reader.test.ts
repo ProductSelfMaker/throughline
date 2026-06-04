@@ -28,6 +28,12 @@ describe('encodeProjectDir', () => {
   it("maps a cwd to Claude Code's dashed project dir name", () => {
     expect(encodeProjectDir('/Users/x/proj')).toBe('-Users-x-proj');
   });
+
+  it('replaces dots and other non-alphanumerics with dashes (matches Claude Code)', () => {
+    // the scribe-agent dir has a dot — must encode like Claude Code does
+    expect(encodeProjectDir('/Users/x/proj/.throughline/agent')).toBe('-Users-x-proj--throughline-agent');
+    expect(encodeProjectDir('/Users/x/my.app')).toBe('-Users-x-my-app');
+  });
 });
 
 describe('extractActivity', () => {

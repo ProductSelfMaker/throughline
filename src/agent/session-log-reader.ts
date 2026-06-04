@@ -57,9 +57,11 @@ function promptText(o: LogEntry): string | null {
   return text;
 }
 
-/** Claude Code stores per-project sessions under ~/.claude/projects/<dashed cwd>/. */
+/** Claude Code stores per-project sessions under ~/.claude/projects/<dashed cwd>/,
+ *  mapping the cwd by replacing every non-alphanumeric char with '-' (so '/', '.',
+ *  spaces, etc. all become '-'; existing '-' is preserved). */
 export function encodeProjectDir(cwd: string): string {
-  return cwd.replace(/\//g, '-');
+  return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 function toolTarget(input: unknown): string {

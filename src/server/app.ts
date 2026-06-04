@@ -28,7 +28,8 @@ export function createApp(session: Session): Hono {
     return c.json({ ok: true });
   });
 
-  app.get('/api/analytics', async (c) => c.json({ ...await session.analytics(), overhead: session.overheadTokens() }));
+  // project = your coding usage; self = Throughline's own usage (same shape)
+  app.get('/api/analytics', async (c) => c.json({ project: await session.analytics(), self: await session.overhead() }));
 
   // history: recent work items (cards) + on-demand detail for one item
   app.get('/api/history', async (c) => {

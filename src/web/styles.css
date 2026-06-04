@@ -105,6 +105,11 @@ body { margin: 0; background: #e9e6dd; }
 .tl-pad { flex: 1; overflow: auto; padding: 8px 30px 28px; }
 .tl-section-h { font-size: 12px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); margin: 6px 0 12px; }
 
+.tl-usage { margin-bottom: 34px; }
+.tl-tok-compare { display: flex; align-items: center; gap: 16px; margin: 4px 0 26px; padding: 14px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--inset); }
+.tl-tok-compare .big { flex: 0 0 auto; font-size: 30px; font-weight: 650; letter-spacing: -0.03em; }
+.tl-tok-compare .cap { font-size: 13.5px; line-height: 1.55; color: var(--text-2); }
+.tl-tok-compare .cap b { color: var(--text); font-weight: 600; }
 .tl-tok-hero { display: flex; gap: 24px; align-items: baseline; margin: 8px 0 22px; flex-wrap: wrap; }
 .tl-tok-big { font-size: 34px; font-weight: 650; letter-spacing: -0.03em; }
 .tl-tok-big small { font-size: 15px; font-weight: 500; color: var(--text-3); margin-left: 6px; }

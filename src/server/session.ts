@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem, OverheadTokens } from '../domain/types';
+import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
@@ -84,14 +84,14 @@ async function defaultGitDiff(cwd: string): Promise<string> {
 // Minimal runner surface this engine needs (one-shot completion only).
 interface Completer {
   complete(prompt: string, signal?: AbortSignal): Promise<string>;
-  /** Throughline's own token usage, if the runner tracks it. */
-  usage?(): OverheadTokens;
 }
 
 export interface SessionDeps {
   store: SpecStore;
   runner: Completer;
   reader: ActivityReader;
+  /** Reads Throughline's OWN scribe-agent logs (for the overhead breakdown). */
+  selfReader?: ActivityReader;
   ingest: IngestStore;
   cwd: string;
   debounceMs?: number;
@@ -114,6 +114,7 @@ export class Session {
   private store: SpecStore;
   private runner: Completer;
   private reader: ActivityReader;
+  private selfReader?: ActivityReader;
   private ingest: IngestStore;
   private cwd: string;
   private debouncer: Debouncer;
@@ -136,6 +137,7 @@ export class Session {
     this.store = deps.store;
     this.runner = deps.runner;
     this.reader = deps.reader;
+    this.selfReader = deps.selfReader;
     this.ingest = deps.ingest;
     this.cwd = deps.cwd;
     this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
@@ -337,9 +339,12 @@ export class Session {
     return this.reader.analyze(ANALYTICS_DAYS, ANALYTICS_MAX_BYTES);
   }
 
-  /** Throughline's OWN token usage this session (null if the runner doesn't track it). */
-  overheadTokens(): OverheadTokens | null {
-    return this.runner.usage?.() ?? null;
+  /** Throughline's OWN usage — analytics over its scribe-agent session logs
+   *  (null if no self-reader is wired). Same shape as project analytics. */
+  async overhead(): Promise<Analytics | null> {
+    if (!this.selfReader) return null;
+    try { return await this.selfReader.analyze(ANALYTICS_DAYS, ANALYTICS_MAX_BYTES); }
+    catch { return null; }
   }
 
   /** Recent work items (user turns) for the history view. */

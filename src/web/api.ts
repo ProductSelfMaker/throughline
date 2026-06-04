@@ -1,10 +1,10 @@
 // src/web/api.ts
-import type { Analytics, WorkItem, WorkItemDetail, DecisionItem, OverheadTokens } from '../domain/types';
+import type { Analytics, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
 
 export type SpecUpdate = { md: string; changedLines: number[] };
-export type { Analytics, WorkItem, WorkItemDetail, DecisionItem, OverheadTokens };
-/** Analytics for the observed project + Throughline's own overhead. */
-export type AnalyticsResponse = Analytics & { overhead: OverheadTokens | null };
+export type { Analytics, WorkItem, WorkItemDetail, DecisionItem };
+/** Token analytics: the observed project's coding usage + Throughline's own usage. */
+export type AnalyticsResponse = { project: Analytics; self: Analytics | null };
 
 /** Recent work items (history cards). */
 export async function fetchWorkItems(limit = 100): Promise<WorkItem[]> {

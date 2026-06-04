@@ -45,6 +45,8 @@ const session = new Session({
   store: new SpecStore(prdPath),
   runner: new ClaudeCodeRunner({ cwd: scribeDir }),
   reader: new SessionLogReader({ cwd }),
+  // reads Throughline's own scribe-agent logs → the "overhead" token breakdown
+  selfReader: new SessionLogReader({ cwd: scribeDir }),
   ingest: new IngestStore(cwd),
   cwd,
 });
