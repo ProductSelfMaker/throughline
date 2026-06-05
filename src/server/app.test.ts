@@ -56,22 +56,41 @@ describe('POST /api/curate', () => {
   });
 });
 
-describe('POST /api/rebuild', () => {
-  it('rebuilds and returns ok', async () => {
+describe('POST /api/jobs/:kind', () => {
+  it('starts a job, reports it running, then clears it on completion', async () => {
     const PRD = `## 📌 개요\nX\n\n## 🎯 목표\n- a\n\n## ✅ 기능 요구사항\n- [ ] b\n\n## ❓ 미해결 질문\n- c\n`;
     session = mk(PRD);
-    const res = await createApp(session).request('/api/rebuild', { method: 'POST' });
-    expect(await res.json()).toEqual({ ok: true });
+    const app = createApp(session);
+    const done = new Promise<void>((res) =>
+      session!.broadcaster.subscribe((ev, d) => { if (ev === 'job-updated' && (d as { status: string }).status === 'done') res(); }));
+    const res = await app.request('/api/jobs/doc', { method: 'POST' });
+    const body = (await res.json()) as { started: boolean; running: string[] };
+    expect(body.started).toBe(true);
+    expect(body.running).toContain('doc');
+    await done;
+    expect(session.runningJobs()).toEqual([]);
+  });
+
+  it('400s on an unknown job kind', async () => {
+    session = mk();
+    const res = await createApp(session).request('/api/jobs/bogus', { method: 'POST' });
+    expect(res.status).toBe(400);
   });
 });
 
 describe('/api/mockup', () => {
-  it('GET returns "" when none; POST generates and returns the assembled html', async () => {
+  it('GET returns "" when none; the mockup job generates the assembled html', async () => {
     session = mk('<div class="mock-canvas">m</div>');
     const app = createApp(session);
     expect(await (await app.request('/api/mockup')).json()).toEqual({ html: '' });
-    const post = await app.request('/api/mockup', { method: 'POST' });
-    const { html } = (await post.json()) as { html: string };
+
+    const done = new Promise<void>((res) =>
+      session!.broadcaster.subscribe((ev, d) => { if (ev === 'job-updated' && (d as { status: string }).status === 'done') res(); }));
+    const post = await app.request('/api/jobs/mockup', { method: 'POST' });
+    expect(((await post.json()) as { started: boolean }).started).toBe(true);
+    await done;
+
+    const { html } = (await (await app.request('/api/mockup')).json()) as { html: string };
     expect(html.startsWith('<!doctype html')).toBe(true);
     expect(html).toContain('<div class="mock-canvas">m</div>'); // fragment wrapped into a full doc
   });

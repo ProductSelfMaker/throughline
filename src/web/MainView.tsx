@@ -1,10 +1,11 @@
 // src/web/MainView.tsx
-// Primary region: wordmark + (mockup) Generate + Rebuild on top (no header bar);
-// then the active view.
+// Primary region: wordmark + a per-page Rebuild action on top (no header bar); then the
+// active view. Rebuild is scoped to the current page and runs as a background job — it
+// completes even if you leave the page or reload (see useJobs); a toast fires on finish.
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { rebuild, fetchMockup, generateMockup, fetchInfo, subscribeStatus, type AnalyticsResponse } from './api';
+import { fetchMockup, fetchInfo, subscribeStatus, type AnalyticsResponse, type JobKind } from './api';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
@@ -32,23 +33,46 @@ const VIEW_LABEL: Record<ViewId, string> = {
   mockup: 'Mockup',
 };
 
+/** Which generative artifact a page's Rebuild rebuilds (null = no rebuild on that page). */
+const REBUILD_KIND: Record<ViewId, Exclude<JobKind, 'mockup'> | null> = {
+  doc: 'doc',
+  decisions: 'decisions',
+  history: null,
+  tokens: null,
+  mockup: null, // mockup uses its own Generate/Update button
+};
+
+/** Confirm-modal copy for the destructive (replace & rebuild) actions. */
+const CONFIRM_COPY: Record<'doc' | 'decisions', { title: string; body: React.ReactNode }> = {
+  doc: { title: 'Rebuild document', body: <>The current document will be <b>replaced</b> and rebuilt from a fresh scan of your codebase. Continue?</> },
+  decisions: { title: 'Rebuild decisions', body: <>The decisions ledger will be <b>rebuilt</b> from your recent activity. Continue?</> },
+};
+
 export function MainView({
   activeView,
   md,
   analytics,
   analyticsLoading,
+  running,
+  start,
+  doneCounts,
 }: {
   activeView: ViewId;
   md: string;
   analytics: AnalyticsResponse | null;
   analyticsLoading: boolean;
+  running: Set<JobKind>;
+  start: (kind: JobKind) => void;
+  doneCounts: Record<JobKind, number>;
 }) {
   const [confirm, setConfirm] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [mockupHtml, setMockupHtml] = useState<string | null>(null);
-  const [mockupBusy, setMockupBusy] = useState(false);
   const [info, setInfo] = useState<{ cwd: string; display: string } | null>(null);
   const [working, setWorking] = useState(false);
+
+  const rebuildKind = REBUILD_KIND[activeView];
+  const rebuilding = rebuildKind ? running.has(rebuildKind) : false;
+  const mockupBusy = running.has('mockup');
 
   useEffect(() => {
     let alive = true;
@@ -57,24 +81,13 @@ export function MainView({
     return () => { alive = false; unsub(); };
   }, []);
 
+  // (Re)load the mockup when entering the page and whenever a mockup job completes.
   useEffect(() => {
     if (activeView !== 'mockup') return;
     let alive = true;
     fetchMockup().then((h) => { if (alive) setMockupHtml(h); }).catch(() => { if (alive) setMockupHtml(''); });
     return () => { alive = false; };
-  }, [activeView]);
-
-  async function doRebuild() {
-    setBusy(true);
-    try { await rebuild(); } catch { /* SSE reflects the result */ } finally {
-      setBusy(false);
-      setConfirm(false);
-    }
-  }
-  async function genMockup() {
-    setMockupBusy(true);
-    try { setMockupHtml(await generateMockup()); } catch { /* keep current */ } finally { setMockupBusy(false); }
-  }
+  }, [activeView, doneCounts.mockup]);
 
   return (
     <section className="tl-region tl-main">
@@ -84,14 +97,22 @@ export function MainView({
         {working ? <span className="tl-working"><span className="dot" />Working…</span> : null}
         <span className="sp" />
         {activeView === 'mockup' ? (
-          <button className="tl-gen" type="button" onClick={() => void genMockup()} disabled={mockupBusy}>
+          <button className="tl-gen" type="button" onClick={() => start('mockup')} disabled={mockupBusy}>
             {Icons.sparkle}{mockupBusy ? 'Generating…' : mockupHtml ? 'Update' : 'Generate'}
           </button>
         ) : null}
-        <button className="tl-rebtn" type="button" onClick={() => setConfirm(true)} title="Rebuild the document from a fresh scan of your codebase">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v4h-4" /></svg>
-          Rebuild
-        </button>
+        {rebuildKind ? (
+          <button
+            className="tl-rebtn"
+            type="button"
+            onClick={() => { if (!rebuilding) setConfirm(true); }}
+            disabled={rebuilding}
+            title="Rebuild this page from a fresh scan"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v4h-4" /></svg>
+            {rebuilding ? 'Rebuilding…' : 'Rebuild'}
+          </button>
+        ) : null}
       </div>
 
       <div className="tl-viewhead">{VIEW_LABEL[activeView]}</div>
@@ -116,17 +137,15 @@ export function MainView({
         <MockupView html={mockupHtml} busy={mockupBusy} />
       )}
 
-      {confirm ? (
-        <div className="tl-modal-overlay" onClick={() => { if (!busy) setConfirm(false); }}>
+      {confirm && rebuildKind ? (
+        <div className="tl-modal-overlay" onClick={() => setConfirm(false)}>
           <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tl-modal-title">Rebuild document</div>
-            <p className="tl-modal-body">
-              The current document will be <b>replaced</b> and rebuilt from a fresh scan of your codebase. Continue?
-            </p>
+            <div className="tl-modal-title">{CONFIRM_COPY[rebuildKind].title}</div>
+            <p className="tl-modal-body">{CONFIRM_COPY[rebuildKind].body}</p>
             <div className="tl-modal-actions">
-              <button className="tl-btn-ghost" type="button" disabled={busy} onClick={() => setConfirm(false)}>Cancel</button>
-              <button className="tl-btn-solid" type="button" disabled={busy} onClick={() => void doRebuild()}>
-                {busy ? 'Rebuilding…' : 'Continue'}
+              <button className="tl-btn-ghost" type="button" onClick={() => setConfirm(false)}>Cancel</button>
+              <button className="tl-btn-solid" type="button" onClick={() => { start(rebuildKind); setConfirm(false); }}>
+                Continue
               </button>
             </div>
           </div>

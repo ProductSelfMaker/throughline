@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { homedir } from 'node:os';
-import { Session } from './session';
+import { Session, isJobKind } from './session';
 
 export function createApp(session: Session): Hono {
   const app = new Hono();
@@ -23,9 +23,14 @@ export function createApp(session: Session): Hono {
     return c.json({ ok: true });
   });
 
-  app.post('/api/rebuild', async (c) => {
-    await session.rebuild();
-    return c.json({ ok: true });
+  // Start a per-page rebuild (doc | decisions | mockup) as a background job. The work
+  // runs detached from this request and completes even if the user leaves the page;
+  // progress arrives via the 'job-updated' SSE event.
+  app.post('/api/jobs/:kind', (c) => {
+    const kind = c.req.param('kind');
+    if (!isJobKind(kind)) return c.json({ error: 'unknown job kind' }, 400);
+    const started = session.startJob(kind);
+    return c.json({ started, running: session.runningJobs() });
   });
 
   // project = your coding usage; self = Throughline's own usage (same shape)
@@ -53,14 +58,16 @@ export function createApp(session: Session): Hono {
     return c.json({ items, refreshing });
   });
 
+  // read-only: the latest mockup html. Generation is a background job (POST /api/jobs/mockup).
   app.get('/api/mockup', async (c) => c.json({ html: await session.readMockup() }));
-  app.post('/api/mockup', async (c) => c.json({ html: await session.generateMockup() }));
 
   app.get('/api/events', (c) => {
     return streamSSE(c, async (stream) => {
       const current = await session.readSpec();
       await stream.writeSSE({ event: 'spec-updated', data: JSON.stringify({ md: current, changedLines: [] }) });
       await stream.writeSSE({ event: 'status', data: JSON.stringify({ working: session.isWorking() }) });
+      // replay in-flight jobs so a freshly-connected / reloaded client restores busy state
+      await stream.writeSSE({ event: 'jobs', data: JSON.stringify({ running: session.runningJobs() }) });
       const unsub = session.broadcaster.subscribe((event, data) => {
         // never let a write to a closed stream become an unhandled rejection (crashes Node)
         stream.writeSSE({ event, data: JSON.stringify(data) }).catch(() => {});

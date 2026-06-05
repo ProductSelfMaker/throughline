@@ -61,10 +61,31 @@ export async function curate(instruction: string): Promise<void> {
   if (!res.ok) throw new Error(`curate failed (${res.status})`);
 }
 
-/** Reset & re-organize: rebuild the doc + decisions from recent activity. */
-export async function rebuild(): Promise<void> {
-  const res = await fetch('/api/rebuild', { method: 'POST' });
-  if (!res.ok) throw new Error(`rebuild failed (${res.status})`);
+/** A user-triggered rebuild that runs as a background job (survives navigation). */
+export type JobKind = 'doc' | 'decisions' | 'mockup';
+export type JobStatus = 'running' | 'done' | 'error';
+
+/** Start a per-page rebuild job. The work runs server-side to completion even if the
+ *  page is left or reloaded; progress arrives via subscribeJobs. */
+export async function startJob(kind: JobKind): Promise<{ started: boolean; running: JobKind[] }> {
+  const res = await fetch(`/api/jobs/${kind}`, { method: 'POST' });
+  if (!res.ok) throw new Error(`job ${kind} failed (${res.status})`);
+  return res.json();
+}
+
+/** Subscribe to background-job lifecycle: the initial in-flight set ('jobs') + per-job
+ *  deltas ('job-updated'). Used for busy state and completion toasts. */
+export function subscribeJobs(
+  onInitial: (running: JobKind[]) => void,
+  onUpdate: (kind: JobKind, status: JobStatus) => void,
+): () => void {
+  const es = new EventSource('/api/events');
+  es.addEventListener('jobs', (e) => onInitial((JSON.parse((e as MessageEvent).data).running ?? []) as JobKind[]));
+  es.addEventListener('job-updated', (e) => {
+    const d = JSON.parse((e as MessageEvent).data) as { kind: JobKind; status: JobStatus };
+    onUpdate(d.kind, d.status);
+  });
+  return () => es.close();
 }
 
 /** The cached decisions ledger + whether a background refresh was started. */
@@ -90,10 +111,3 @@ export async function fetchMockup(): Promise<string> {
   return data.html ?? '';
 }
 
-/** Generate the mockup from the product doc (slow — LLM); returns the HTML. */
-export async function generateMockup(): Promise<string> {
-  const res = await fetch('/api/mockup', { method: 'POST' });
-  if (!res.ok) throw new Error(`mockup failed (${res.status})`);
-  const data = (await res.json()) as { html?: string };
-  return data.html ?? '';
-}

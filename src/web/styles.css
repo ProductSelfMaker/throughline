@@ -232,3 +232,10 @@ body { margin: 0; background: #e9e6dd; }
 .tl-send { width: 30px; height: 30px; border: none; border-radius: 8px; background: var(--solid); color: var(--on-solid); display: grid; place-items: center; cursor: pointer; }
 .tl-send svg { width: 15px; height: 15px; }
 .tl-send:disabled { opacity: .4; cursor: default; }
+
+/* Background-job completion toasts (stacked bottom-right, click or auto-dismiss). */
+.tl-toaster { position: fixed; right: 18px; bottom: 18px; z-index: 80; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.tl-toast { display: inline-flex; align-items: center; gap: 9px; padding: 10px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border-2); box-shadow: var(--shadow); color: var(--text); font-size: 13px; cursor: pointer; animation: tl-toast-in .18s ease-out; }
+.tl-toast-dot { width: 8px; height: 8px; border-radius: 50%; background: #2f9e44; flex: 0 0 auto; }
+.tl-toast-err .tl-toast-dot { background: #e03131; }
+@keyframes tl-toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }

@@ -232,4 +232,80 @@ describe('Session (observer)', () => {
     expect(out.startsWith('<!doctype html')).toBe(true);
     expect(await session.readMockup()).toBe(out);
   });
+
+  it('startJob runs a kind in the background, is idempotent, and broadcasts running then done', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write(DOC);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const runner = { complete: async () => { await gate; return DOC; } };
+    const reader = new FakeReader({ excerpt: '', advanced: {} }, { '/x/s1.jsonl': 5 }, '사용자: 최근');
+    session = new Session({
+      store, runner, reader, ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
+      projectCode: async () => ({ files: [], truncated: false }),
+    });
+    const events: Array<{ kind: string; status: string }> = [];
+    const done = new Promise<void>((res) => {
+      session!.broadcaster.subscribe((ev, d) => {
+        if (ev !== 'job-updated') return;
+        events.push(d as { kind: string; status: string });
+        if ((d as { status: string }).status === 'done') res();
+      });
+    });
+
+    expect(session.startJob('doc')).toBe(true);      // started
+    expect(session.runningJobs()).toEqual(['doc']);  // tracked while in flight
+    expect(session.startJob('doc')).toBe(false);     // idempotent: already running
+
+    release();
+    await done;
+    expect(events).toEqual([{ kind: 'doc', status: 'running' }, { kind: 'doc', status: 'done' }]);
+    expect(session.runningJobs()).toEqual([]);       // cleared after settle
+  });
+
+  it('startJob broadcasts error and clears the job when the work fails', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write(DOC);
+    const reader = new FakeReader({ excerpt: '', advanced: {} }, {}, '');
+    reader.currentOffsets = async () => { throw new Error('disk gone'); };
+    session = new Session({
+      store, runner: completer(DOC), reader, ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
+      projectCode: async () => ({ files: [], truncated: false }),
+    });
+    const settled = new Promise<string>((res) => {
+      session!.broadcaster.subscribe((ev, d) => {
+        if (ev === 'job-updated' && (d as { status: string }).status !== 'running') res((d as { status: string }).status);
+      });
+    });
+    expect(session.startJob('doc')).toBe(true);
+    expect(await settled).toBe('error');
+    expect(session.runningJobs()).toEqual([]);
+  });
+
+  it('rebuildDecisions discards the old ledger and re-extracts from current turns', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    const { writeFile, mkdir } = await import('node:fs/promises');
+    await mkdir(join(dir, '.throughline'), { recursive: true });
+    await writeFile(
+      join(dir, '.throughline', 'decisions.json'),
+      JSON.stringify([{ id: 'old', what: 'Stale decision', why: 'old', alternatives: '', time: 1 }]),
+      'utf8',
+    );
+
+    const reader = new FakeReader({ excerpt: '', advanced: {} }, { '/x/s1.jsonl': 10 });
+    reader.listWorkItems = async () => [{ id: 'a', file: 's1', start: 0, end: 50, title: 't', time: 100, tools: 0, tokens: 0 }];
+    reader.readWorkItem = async (): Promise<WorkItemDetail> =>
+      ({ title: '', time: 0, tokens: 0, filesTouched: [], messages: [{ role: 'user', text: 'use postgres', tools: [] }] });
+    const runner = { complete: async () => '[{"turn":0,"what":"Use Postgres","why":"relational","alternatives":"","supersedes":""}]' };
+    session = new Session({ store, runner, reader, ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '', decisionsCooldownMs: 0 });
+
+    const upd = new Promise<DecisionItem[]>((res) => {
+      const off = session!.broadcaster.subscribe((ev, d) => { if (ev === 'decisions-updated') { off(); res((d as { items: DecisionItem[] }).items); } });
+    });
+    await session.rebuildDecisions();
+    const items = await upd;
+    expect(items.map((d) => d.what)).toEqual(['Use Postgres']);          // re-extracted from current turns
+    expect(items.map((d) => d.what)).not.toContain('Stale decision');    // old ledger discarded
+    expect(await session.readDecisions()).toEqual(items);                // persisted
+  });
 });

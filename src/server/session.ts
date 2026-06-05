@@ -22,6 +22,11 @@ import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
 
+/** A user-triggered rebuild that runs as a background job (survives navigation). */
+export type JobKind = 'doc' | 'decisions' | 'mockup';
+export const JOB_KINDS: readonly JobKind[] = ['doc', 'decisions', 'mockup'];
+export const isJobKind = (s: string): s is JobKind => (JOB_KINDS as readonly string[]).includes(s);
+
 // Bounds for a full rebuild — re-scan recent activity only (never the whole history).
 const REBUILD_DAYS = 14;
 const REBUILD_MAX_CHARS = 40_000;
@@ -127,6 +132,9 @@ export class Session {
   private mockupPath: string;
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
+
+  // In-flight background rebuild jobs, keyed by kind (one per kind at a time).
+  private jobs = new Map<JobKind, Promise<void>>();
 
   // "AI is working" state — true while an LLM op runs or new activity is pending.
   private busyCount = 0;
@@ -394,6 +402,51 @@ export class Session {
       const applied = await applySpecUpdate(this.store, raw, current);
       if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
     });
+  }
+
+  /** Kinds with a rebuild currently in flight (for a freshly-connected client). */
+  runningJobs(): JobKind[] {
+    return [...this.jobs.keys()];
+  }
+
+  /** Start a per-kind rebuild as a background job, detached from the HTTP request so
+   *  it runs to completion even after the user leaves the page or reloads (as long as
+   *  the server lives). Idempotent: returns false if that kind is already running.
+   *  Start/finish are broadcast as 'job-updated' so every client can reflect busy
+   *  state and toast on completion. The underlying op still goes through runBusy,
+   *  so the global "Working…" indicator keeps working too. */
+  startJob(kind: JobKind): boolean {
+    if (this.jobs.has(kind)) return false;
+    this.broadcaster.broadcast('job-updated', { kind, status: 'running' });
+    const p = this.runJob(kind).then(() => 'done' as const, () => 'error' as const).then((status) => {
+      this.jobs.delete(kind);
+      this.broadcaster.broadcast('job-updated', { kind, status });
+    });
+    this.jobs.set(kind, p);
+    return true;
+  }
+
+  private runJob(kind: JobKind): Promise<void> {
+    switch (kind) {
+      case 'doc': return this.rebuild();
+      case 'decisions': return this.rebuildDecisions();
+      case 'mockup': return this.generateMockup().then(() => {});
+    }
+  }
+
+  /** Full rebuild of the decisions ledger: discard the accumulated ledger + state and
+   *  re-extract from recent turns (catch up fully over a few bounded passes). Mirrors
+   *  the doc Rebuild's "discard and rebuild" semantics; normal operation only extends
+   *  incrementally (see refreshDecisionsIfStale). */
+  async rebuildDecisions(): Promise<void> {
+    await this.writeDecisions([]);
+    await this.writeDecisionsState({ mark: -1, ts: 0, lastTime: 0 });
+    for (let guard = 0; guard < 10; guard++) {
+      const before = (await this.readDecisionsState()).lastTime;
+      await this.extendDecisions(Date.now(), await this.activityMark());
+      const after = (await this.readDecisionsState()).lastTime;
+      if (after === before) break; // no more turns to process
+    }
   }
 
   /** Reset & re-organize the *product doc*: discard the current PRD and rebuild it
