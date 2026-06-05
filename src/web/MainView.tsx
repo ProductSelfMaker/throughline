@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fetchMockup, fetchInfo, subscribeStatus, type AnalyticsResponse, type JobKind } from './api';
+import { fetchMockup, fetchArchitecture, fetchInfo, subscribeStatus, type AnalyticsResponse, type JobKind } from './api';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
@@ -27,6 +27,7 @@ function shortenPath(p: string, max = 52): string {
 /** Header label per view — shown identically on every page. */
 const VIEW_LABEL: Record<ViewId, string> = {
   doc: 'Document',
+  architecture: 'Architecture',
   history: 'History',
   decisions: 'Decisions',
   tokens: 'Tokens',
@@ -36,6 +37,7 @@ const VIEW_LABEL: Record<ViewId, string> = {
 /** Which generative artifact a page's Rebuild rebuilds (null = no rebuild on that page). */
 const REBUILD_KIND: Record<ViewId, Exclude<JobKind, 'mockup'> | null> = {
   doc: 'doc',
+  architecture: 'architecture',
   decisions: 'decisions',
   history: null,
   tokens: null,
@@ -43,9 +45,10 @@ const REBUILD_KIND: Record<ViewId, Exclude<JobKind, 'mockup'> | null> = {
 };
 
 /** Confirm-modal copy for the destructive (replace & rebuild) actions. */
-const CONFIRM_COPY: Record<'doc' | 'decisions', { title: string; body: React.ReactNode }> = {
+const CONFIRM_COPY: Record<'doc' | 'decisions' | 'architecture', { title: string; body: React.ReactNode }> = {
   doc: { title: 'Rebuild document', body: <>The current document will be <b>replaced</b> and rebuilt from a fresh scan of your codebase. Continue?</> },
   decisions: { title: 'Rebuild decisions', body: <>The decisions ledger will be <b>rebuilt</b> from your recent activity. Continue?</> },
+  architecture: { title: 'Rebuild architecture', body: <>The architecture overview will be <b>rebuilt</b> from a fresh scan of your codebase. Continue?</> },
 };
 
 export function MainView({
@@ -67,6 +70,7 @@ export function MainView({
 }) {
   const [confirm, setConfirm] = useState(false);
   const [mockupHtml, setMockupHtml] = useState<string | null>(null);
+  const [archMd, setArchMd] = useState<string | null>(null);
   const [info, setInfo] = useState<{ cwd: string; display: string } | null>(null);
   const [working, setWorking] = useState(false);
 
@@ -88,6 +92,14 @@ export function MainView({
     fetchMockup().then((h) => { if (alive) setMockupHtml(h); }).catch(() => { if (alive) setMockupHtml(''); });
     return () => { alive = false; };
   }, [activeView, doneCounts.mockup]);
+
+  // (Re)load the architecture doc on entering the page and after each architecture rebuild.
+  useEffect(() => {
+    if (activeView !== 'architecture') return;
+    let alive = true;
+    fetchArchitecture().then((m) => { if (alive) setArchMd(m); }).catch(() => { if (alive) setArchMd(''); });
+    return () => { alive = false; };
+  }, [activeView, doneCounts.architecture]);
 
   return (
     <section className="tl-region tl-main">
@@ -124,6 +136,18 @@ export function MainView({
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripFrontmatter(md)}</ReactMarkdown>
             ) : (
               <p className="tl-placeholder">Start working in your terminal and a feature-by-feature product doc fills in here automatically.</p>
+            )}
+          </div>
+        </div>
+      ) : activeView === 'architecture' ? (
+        <div className="tl-doc">
+          <div className="tl-doc-inner">
+            {archMd === null ? (
+              <p className="tl-placeholder">Loading…</p>
+            ) : archMd.trim() ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripFrontmatter(archMd)}</ReactMarkdown>
+            ) : (
+              <p className="tl-placeholder">Press <b>Rebuild</b> to generate a developer-facing architecture overview from a scan of your codebase.</p>
             )}
           </div>
         </div>

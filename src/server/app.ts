@@ -33,6 +33,9 @@ export function createApp(session: Session): Hono {
     return c.json({ started, running: session.runningJobs() });
   });
 
+  // developer-facing architecture overview (generated on demand via POST /api/jobs/architecture)
+  app.get('/api/architecture', async (c) => c.json({ md: await session.readArchitecture() }));
+
   // project = your coding usage; self = Throughline's own usage (same shape)
   app.get('/api/analytics', async (c) => c.json({ project: await session.analytics(), self: await session.overhead() }));
 

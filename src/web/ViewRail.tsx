@@ -3,10 +3,11 @@
 import type { ReactElement } from 'react';
 import { Icons } from './icons';
 
-export type ViewId = 'doc' | 'history' | 'decisions' | 'tokens' | 'mockup';
+export type ViewId = 'doc' | 'history' | 'decisions' | 'tokens' | 'mockup' | 'architecture';
 
 const VIEWS: { id: ViewId; label: string; icon: ReactElement }[] = [
   { id: 'doc', label: 'Document', icon: Icons.doc },
+  { id: 'architecture', label: 'Architecture', icon: Icons.architecture },
   { id: 'history', label: 'History', icon: Icons.history },
   { id: 'decisions', label: 'Decisions', icon: Icons.decisions },
   { id: 'tokens', label: 'Tokens', icon: Icons.tokens },

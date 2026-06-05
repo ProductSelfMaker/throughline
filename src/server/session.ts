@@ -18,13 +18,14 @@ import { assembleMockupHtml } from '../domain/mockup-html';
 import { collectUiSource, UiSource } from '../agent/project-ui-source';
 import { collectProjectFiles, chunkByBudget, ProjectCode } from '../agent/project-code';
 import { buildCodeMapPrompt, buildReduceMergePrompt, buildProductDocPrompt, DocContext } from '../domain/product-doc-prompt';
+import { buildArchMapPrompt, buildArchMergePrompt, buildArchDocPrompt, ArchContext } from '../domain/architecture-prompt';
 import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
 
 /** A user-triggered rebuild that runs as a background job (survives navigation). */
-export type JobKind = 'doc' | 'decisions' | 'mockup';
-export const JOB_KINDS: readonly JobKind[] = ['doc', 'decisions', 'mockup'];
+export type JobKind = 'doc' | 'decisions' | 'mockup' | 'architecture';
+export const JOB_KINDS: readonly JobKind[] = ['doc', 'decisions', 'mockup', 'architecture'];
 export const isJobKind = (s: string): s is JobKind => (JOB_KINDS as readonly string[]).includes(s);
 
 // Bounds for a full rebuild — re-scan recent activity only (never the whole history).
@@ -130,6 +131,7 @@ export class Session {
   private decisionsStatePath: string;
   private decisionsCooldownMs: number;
   private mockupPath: string;
+  private architecturePath: string;
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
 
@@ -156,6 +158,17 @@ export class Session {
     this.decisionsStatePath = join(deps.cwd, '.throughline', 'decisions-state.json');
     this.decisionsCooldownMs = deps.decisionsCooldownMs ?? 180_000;
     this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
+    this.architecturePath = join(deps.cwd, '.throughline', 'architecture.md');
+  }
+
+  /** The developer-facing architecture doc ('' if not generated yet). */
+  async readArchitecture(): Promise<string> {
+    try { return existsSync(this.architecturePath) ? await readFile(this.architecturePath, 'utf8') : ''; }
+    catch { return ''; }
+  }
+  private async writeArchitecture(md: string): Promise<void> {
+    await mkdir(dirname(this.architecturePath), { recursive: true });
+    await writeFile(this.architecturePath, md, 'utf8');
   }
 
   /** The latest generated mockup HTML ('' if none yet). */
@@ -431,6 +444,7 @@ export class Session {
       case 'doc': return this.rebuild();
       case 'decisions': return this.rebuildDecisions();
       case 'mockup': return this.generateMockup().then(() => {});
+      case 'architecture': return this.rebuildArchitecture();
     }
   }
 
@@ -522,6 +536,59 @@ export class Session {
 
     const doc = await this.runner.complete(buildProductDocPrompt(level.join('\n\n'), ctx));
     return doc.trim() ? doc : DEFAULT_SPEC;
+  }
+
+  /** Rebuild the *architecture* doc: a deep, code-grounded technical overview (the developer
+   *  "how it's built" lens). Same map→reduce pass as the product doc, opposite perspective.
+   *  Generated only on demand (this job) — not continuously ingested. Keeps the previous doc
+   *  on empty/failure. */
+  async rebuildArchitecture(): Promise<void> {
+    await this.runBusy(async () => {
+      try {
+        const next = await this.buildArchFromCode();
+        if (next.trim()) await this.writeArchitecture(next);
+      } catch {
+        // keep the previous architecture doc
+      }
+    });
+  }
+
+  /** Deep, code-grounded architecture overview. Reads the whole project (bounded), extracts
+   *  architectural facts per chunk (map), collapses to fit (merge), then synthesizes the doc. */
+  private async buildArchFromCode(): Promise<string> {
+    const { files, truncated } = await this.projectCode(this.cwd);
+    if (files.length === 0) return '';
+
+    const chunks = chunkByBudget(files, MAP_CHUNK_BUDGET);
+    const maps = (await pool(chunks, MAP_CONCURRENCY, (c) =>
+      this.runner.complete(buildArchMapPrompt(c.label, c.text)).catch(() => ''),
+    )).filter((s) => s.trim());
+    if (maps.length === 0) return '';
+
+    const ctx: ArchContext = {
+      manifest: files.find((f) => /(^|\/)package\.json$/i.test(f.path))?.content,
+      readme: files.find((f) => /(^|\/)readme(\.[a-z]+)?$/i.test(f.path))?.content,
+      decisions: await this.decisionsAsText().catch(() => ''),
+      truncated,
+    };
+
+    // collapse hierarchically if the summaries don't fit, then synthesize
+    let level = maps;
+    let guard = 0;
+    while (joinLen(level) > REDUCE_BUDGET && level.length > 1 && guard < 6) {
+      guard += 1;
+      const batches = batchByBudget(level, REDUCE_BUDGET);
+      if (batches.length >= level.length) break;
+      const merged: string[] = [];
+      for (const b of batches) {
+        const m = (await this.runner.complete(buildArchMergePrompt(b.join('\n\n'))).catch(() => '')).trim();
+        if (m) merged.push(m);
+      }
+      if (merged.length === 0) break;
+      level = merged;
+    }
+    const doc = await this.runner.complete(buildArchDocPrompt(level.join('\n\n'), ctx));
+    return doc.trim() ? doc : '';
   }
 
   /** Run any pending ingest immediately (tests / shutdown). */

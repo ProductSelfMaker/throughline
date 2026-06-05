@@ -125,6 +125,14 @@ describe('GET /api/decisions', () => {
   });
 });
 
+describe('GET /api/architecture', () => {
+  it('returns the architecture doc ("" when none yet)', async () => {
+    session = mk();
+    const res = await createApp(session).request('/api/architecture');
+    expect(await res.json()).toEqual({ md: '' });
+  });
+});
+
 describe('GET /api/analytics', () => {
   it('returns project analytics + self (null when no self-reader is wired)', async () => {
     session = mk();

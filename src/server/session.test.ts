@@ -282,6 +282,33 @@ describe('Session (observer)', () => {
     expect(session.runningJobs()).toEqual([]);
   });
 
+  it('startJob("architecture") builds a code-grounded architecture doc (map → reduce)', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    const ingest = new IngestStore(dir);
+    const reader = new FakeReader({ excerpt: '', advanced: {} }, { '/x/s1.jsonl': 5 });
+    const ARCH = `## Overview\n관찰 시스템.\n\n## Stack\nNode, Hono.\n\n## Modules\n- server\n\n## Key Flows\n- 로그→doc\n`;
+    const runner = {
+      complete: async (prompt: string) => {
+        if (prompt.includes('You are a software architect')) return '- server: hono app';
+        if (prompt.includes('You write an ARCHITECTURE document')) return ARCH;
+        return '';
+      },
+    };
+    session = new Session({
+      store, runner, reader, ingest, cwd: dir, gitDiff: async () => '',
+      projectCode: async () => ({ files: [{ path: 'src/server/app.ts', content: 'new Hono()' }], truncated: false }),
+    });
+    const done = new Promise<void>((res) => {
+      const off = session!.broadcaster.subscribe((ev, d) => { if (ev === 'job-updated' && (d as { status: string }).status === 'done') { off(); res(); } });
+    });
+    expect(session.startJob('architecture')).toBe(true);  // 'architecture' is a valid job kind
+    await done;
+    const md = await session.readArchitecture();
+    expect(md).toContain('## Modules');                   // code-grounded arch doc written
+    expect(md).toContain('## Key Flows');
+    expect(md).toBe(ARCH);
+  });
+
   it('rebuildDecisions discards the old ledger and re-extracts from current turns', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     const { writeFile, mkdir } = await import('node:fs/promises');

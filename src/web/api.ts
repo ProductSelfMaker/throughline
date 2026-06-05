@@ -62,7 +62,7 @@ export async function curate(instruction: string): Promise<void> {
 }
 
 /** A user-triggered rebuild that runs as a background job (survives navigation). */
-export type JobKind = 'doc' | 'decisions' | 'mockup';
+export type JobKind = 'doc' | 'decisions' | 'mockup' | 'architecture';
 export type JobStatus = 'running' | 'done' | 'error';
 
 /** Start a per-page rebuild job. The work runs server-side to completion even if the
@@ -109,5 +109,13 @@ export async function fetchMockup(): Promise<string> {
   if (!res.ok) return '';
   const data = (await res.json()) as { html?: string };
   return data.html ?? '';
+}
+
+/** The developer-facing architecture doc ('' if not generated yet). */
+export async function fetchArchitecture(): Promise<string> {
+  const res = await fetch('/api/architecture');
+  if (!res.ok) return '';
+  const data = (await res.json()) as { md?: string };
+  return data.md ?? '';
 }
 

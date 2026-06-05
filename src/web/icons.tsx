@@ -13,6 +13,7 @@ export const Icons: Record<string, ReactElement> = {
   decisions: stroke(<><circle cx="6" cy="6" r="2.2" /><circle cx="6" cy="18" r="2.2" /><circle cx="18" cy="12" r="2.2" /><path d="M6 8.2v7.6M8.2 6h4a3.6 3.6 0 0 1 3.6 3.6v.6M8.2 18h4a3.6 3.6 0 0 0 3.6-3.6v-.6" /></>),
   tokens: stroke(<path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />),
   mockup: stroke(<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 9v11" /></>),
+  architecture: stroke(<><path d="M12 2 3 7l9 5 9-5-9-5z" /><path d="M3 12l9 5 9-5" /><path d="M3 17l9 5 9-5" /></>),
   send: stroke(<path d="M12 19V5M5 12l7-7 7 7" />),
   refresh: stroke(<><path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v4h-4" /></>),
   sparkle: (
