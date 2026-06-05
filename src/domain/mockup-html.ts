@@ -10,7 +10,13 @@ const CANVAS_CSS = `
 html { height: auto; }
 body { margin: 0; padding: 52px; background: #e9e6dd; height: auto; min-height: 100%;
        font-family: "Geist", -apple-system, system-ui, "Apple SD Gothic Neo", "Segoe UI", sans-serif; }
-.mock-canvas { display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: 36px 56px; max-width: 6900px; }
+.mock-canvas { display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: 36px 56px; max-width: none; }
+/* page-type groups stack vertically (each a full-width band); a divider separates them.
+   Loose .mock-art with no group still wraps in the canvas row (gallery fallback). */
+.mock-group { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; gap: 36px 56px; padding: 46px 0; }
+.mock-group:first-child { padding-top: 6px; }
+.mock-group + .mock-group { border-top: 2px dashed #cdc7ba; }
+.mock-group-label { flex-basis: 100%; margin: 0 0 4px; font-family: "Geist Mono", ui-monospace, "SF Mono", monospace; font-size: 19px; font-weight: 700; letter-spacing: .01em; color: #6b675d; }
 .mock-art { display: flex; flex-direction: column; gap: 12px; }
 .mock-label { font-family: "Geist Mono", ui-monospace, "SF Mono", monospace; font-size: 13px; font-weight: 600; color: #44413a; padding-left: 2px; }
 .mock-frame { width: 1180px; height: 720px; border-radius: 18px; overflow: hidden; background: #fff;

@@ -21,4 +21,11 @@ describe('buildMockupPrompt', () => {
     expect(p).toContain('Never invent');     // do not invent screens
     expect(p).toContain('modal');            // interrupt/overlay states required
   });
+
+  it('asks to group artboards by page type into divider-separated sections', () => {
+    const p = buildMockupPrompt({ doc: '## 개요', css: '', components: '' });
+    expect(p).toContain('mock-group');        // each page-type group is its own section
+    expect(p).toContain('mock-group-label');  // group gets a label
+    expect(p).toContain('SEPARATE groups');   // distinct screens are separated (→ divider)
+  });
 });
