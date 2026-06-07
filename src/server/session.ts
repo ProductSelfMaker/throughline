@@ -12,6 +12,7 @@ import { Broadcaster } from './broadcaster';
 import { buildFlowPrompt } from '../domain/flow-prompt';
 import { buildSyncPrompt } from '../domain/sync-prompt';
 import { buildCuratePrompt } from '../domain/curate-prompt';
+import { buildTidyPrompt } from '../domain/tidy-prompt';
 import { buildDecisionsExtractPrompt, parseDecisions } from '../domain/decisions-prompt';
 import { buildMockupPrompt } from '../domain/mockup-prompt';
 import { assembleMockupHtml } from '../domain/mockup-html';
@@ -24,8 +25,8 @@ import { applySpecUpdate } from '../core/apply-spec-update';
 const execFileP = promisify(execFile);
 
 /** A user-triggered rebuild that runs as a background job (survives navigation). */
-export type JobKind = 'doc' | 'decisions' | 'mockup' | 'architecture';
-export const JOB_KINDS: readonly JobKind[] = ['doc', 'decisions', 'mockup', 'architecture'];
+export type JobKind = 'doc' | 'decisions' | 'mockup' | 'architecture' | 'tidy';
+export const JOB_KINDS: readonly JobKind[] = ['doc', 'decisions', 'mockup', 'architecture', 'tidy'];
 export const isJobKind = (s: string): s is JobKind => (JOB_KINDS as readonly string[]).includes(s);
 
 // Bounds for a full rebuild — re-scan recent activity only (never the whole history).
@@ -419,6 +420,20 @@ export class Session {
     });
   }
 
+  /** Reorganize the *current* doc in place (a refactor pass): merge duplicates, group
+   *  per-feature content, reorder, tighten — losing nothing. Operates on the doc text only
+   *  (no code scan), so it is cheap. Nothing is written unless a valid doc comes back, and
+   *  a failed/empty result throws so the job reports honestly (previous doc preserved). */
+  async tidyDoc(): Promise<void> {
+    await this.runBusy(async () => {
+      const current = await this.store.read();
+      const raw = await this.runner.complete(buildTidyPrompt(current));
+      const applied = await applySpecUpdate(this.store, raw, current);
+      if (!applied.ok) throw new Error('tidy produced an empty document');
+      this.broadcaster.broadcast('spec-updated', applied.result);
+    });
+  }
+
   /** Kinds with a rebuild currently in flight (for a freshly-connected client). */
   runningJobs(): JobKind[] {
     return [...this.jobs.keys()];
@@ -447,6 +462,7 @@ export class Session {
       case 'decisions': return this.rebuildDecisions();
       case 'mockup': return this.generateMockup().then(() => {});
       case 'architecture': return this.rebuildArchitecture();
+      case 'tidy': return this.tidyDoc();
     }
   }
 

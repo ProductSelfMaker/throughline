@@ -12,12 +12,14 @@ const DONE_TEXT: Record<JobKind, string> = {
   decisions: 'Decisions rebuilt',
   mockup: 'Mockup updated',
   architecture: 'Architecture rebuilt',
+  tidy: 'Document tidied',
 };
 const FAIL_TEXT: Record<JobKind, string> = {
   doc: 'Document rebuild failed',
   decisions: 'Decisions rebuild failed',
   mockup: 'Mockup update failed',
   architecture: 'Architecture rebuild failed',
+  tidy: 'Document tidy failed',
 };
 
 export type JobsState = {
@@ -34,7 +36,7 @@ export type JobsState = {
 export function useJobs(): JobsState {
   const [running, setRunning] = useState<Set<JobKind>>(new Set());
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [doneCounts, setDoneCounts] = useState<Record<JobKind, number>>({ doc: 0, decisions: 0, mockup: 0, architecture: 0 });
+  const [doneCounts, setDoneCounts] = useState<Record<JobKind, number>>({ doc: 0, decisions: 0, mockup: 0, architecture: 0, tidy: 0 });
   const nextId = useRef(1);
 
   const dismiss = useCallback((id: number) => setToasts((ts) => ts.filter((t) => t.id !== id)), []);

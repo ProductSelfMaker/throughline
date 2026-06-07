@@ -343,6 +343,31 @@ describe('Session (observer)', () => {
     expect(await session.readArchitecture()).toBe('');
   });
 
+  it('startJob("tidy") reorganizes the current doc and broadcasts spec-updated', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## Overview\nX\n\n## 로그인\nA\nA\n\n## Open Questions\n- q\n');
+    const TIDIED = '## Overview\nX\n\n## 로그인\nA\n\n## Open Questions\n- q\n';
+    const runner = { complete: async (p: string) => (p.includes('REORGANIZE') ? TIDIED : '') };
+    session = new Session({ store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    const updated = new Promise<ScribeResult>((res) => session!.broadcaster.subscribe((ev, d) => { if (ev === 'spec-updated') res(d as ScribeResult); }));
+    const done = new Promise<string>((res) => session!.broadcaster.subscribe((ev, d) => { if (ev === 'job-updated' && (d as { status: string }).status !== 'running') res((d as { status: string }).status); }));
+    expect(session.startJob('tidy')).toBe(true);
+    await updated;
+    expect(await done).toBe('done');
+    expect(await store.read()).toContain('## 로그인');   // reorganized doc written
+  });
+
+  it('a failed tidy reports error and keeps the previous doc', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## Overview\nKEEP\n\n## Open Questions\n- q\n');
+    const runner = { complete: async () => { throw new Error('529 Overloaded'); } };
+    session = new Session({ store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    const settled = new Promise<string>((res) => session!.broadcaster.subscribe((ev, d) => { if (ev === 'job-updated' && (d as { status: string }).status !== 'running') res((d as { status: string }).status); }));
+    expect(session.startJob('tidy')).toBe(true);
+    expect(await settled).toBe('error');
+    expect(await store.read()).toContain('KEEP');       // previous doc preserved
+  });
+
   it('rebuildDecisions discards the old ledger and re-extracts from current turns', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     const { writeFile, mkdir } = await import('node:fs/promises');

@@ -35,7 +35,8 @@ const VIEW_LABEL: Record<ViewId, string> = {
 };
 
 /** Which generative artifact a page's Rebuild rebuilds (null = no rebuild on that page). */
-const REBUILD_KIND: Record<ViewId, Exclude<JobKind, 'mockup'> | null> = {
+type RebuildKind = 'doc' | 'decisions' | 'architecture';
+const REBUILD_KIND: Record<ViewId, RebuildKind | null> = {
   doc: 'doc',
   architecture: 'architecture',
   decisions: 'decisions',
@@ -45,7 +46,7 @@ const REBUILD_KIND: Record<ViewId, Exclude<JobKind, 'mockup'> | null> = {
 };
 
 /** Confirm-modal copy for the destructive (replace & rebuild) actions. */
-const CONFIRM_COPY: Record<'doc' | 'decisions' | 'architecture', { title: string; body: React.ReactNode }> = {
+const CONFIRM_COPY: Record<RebuildKind, { title: string; body: React.ReactNode }> = {
   doc: { title: 'Rebuild document', body: <>The current document will be <b>replaced</b> and rebuilt from a fresh scan of your codebase. Continue?</> },
   decisions: { title: 'Rebuild decisions', body: <>The decisions ledger will be <b>rebuilt</b> from your recent activity. Continue?</> },
   architecture: { title: 'Rebuild architecture', body: <>The architecture overview will be <b>rebuilt</b> from a fresh scan of your codebase. Continue?</> },
@@ -77,6 +78,7 @@ export function MainView({
   const rebuildKind = REBUILD_KIND[activeView];
   const rebuilding = rebuildKind ? running.has(rebuildKind) : false;
   const mockupBusy = running.has('mockup');
+  const tidying = running.has('tidy');
 
   useEffect(() => {
     let alive = true;
@@ -111,6 +113,18 @@ export function MainView({
         {activeView === 'mockup' ? (
           <button className="tl-gen" type="button" onClick={() => start('mockup')} disabled={mockupBusy}>
             {Icons.sparkle}{mockupBusy ? 'Generating…' : mockupHtml ? 'Update' : 'Generate'}
+          </button>
+        ) : null}
+        {activeView === 'doc' ? (
+          <button
+            className="tl-rebtn"
+            type="button"
+            onClick={() => { if (!tidying) start('tidy'); }}
+            disabled={tidying}
+            title="Reorganize the current document in place (merge duplicates, regroup, tighten) — no content lost"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h10M4 18h6" /></svg>
+            {tidying ? 'Tidying…' : 'Tidy'}
           </button>
         ) : null}
         {rebuildKind ? (

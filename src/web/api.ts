@@ -62,7 +62,7 @@ export async function curate(instruction: string): Promise<void> {
 }
 
 /** A user-triggered rebuild that runs as a background job (survives navigation). */
-export type JobKind = 'doc' | 'decisions' | 'mockup' | 'architecture';
+export type JobKind = 'doc' | 'decisions' | 'mockup' | 'architecture' | 'tidy';
 export type JobStatus = 'running' | 'done' | 'error';
 
 /** Start a per-page rebuild job. The work runs server-side to completion even if the
