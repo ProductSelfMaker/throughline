@@ -309,6 +309,39 @@ describe('Session (observer)', () => {
     expect(md).toBe(ARCH);
   });
 
+  it('architecture rebuild validates citations — keeps real source files, drops hallucinated', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    const DOC = [
+      '## Overview', 'A system.', '',
+      '## Modules', '- **server** — app',
+      '**Sources:** `src/server/app.ts`, `src/ghost/nope.ts`', '',
+      '## Key Flows', '- a flow',
+      '**Sources:** `imaginary.ts`', '',
+    ].join('\n');
+    const runner = {
+      complete: async (prompt: string) => {
+        if (prompt.includes('You are a software architect')) return '- server [src: src/server/app.ts]';
+        if (prompt.includes('You write an ARCHITECTURE document')) return DOC;
+        return '';
+      },
+    };
+    session = new Session({
+      store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }, { '/x/s1.jsonl': 5 }),
+      ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
+      projectCode: async () => ({ files: [{ path: 'src/server/app.ts', content: 'new Hono()' }], truncated: false }),
+    });
+    const done = new Promise<void>((res) => {
+      const off = session!.broadcaster.subscribe((ev, d) => { if (ev === 'job-updated' && (d as { status: string }).status === 'done') { off(); res(); } });
+    });
+    expect(session.startJob('architecture')).toBe(true);
+    await done;
+    const md = await session.readArchitecture();
+    expect(md).toContain('**Sources:** `src/server/app.ts`'); // real cited file kept
+    expect(md).not.toContain('ghost');                         // hallucinated path dropped
+    expect(md).not.toContain('imaginary');                     // all-invalid Sources line removed
+    expect(md).toContain('## Key Flows');                      // section body preserved
+  });
+
   it('a failed mockup generation reports error and keeps the previous mockup', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write('## 개요\n앱\n');

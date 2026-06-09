@@ -4,7 +4,7 @@
 // the project's real source. Same pipeline shape as the product doc.
 
 /** MAP: extract architectural facts from one chunk of source code. */
-export function buildArchMapPrompt(chunkLabel: string, code: string): string {
+export function buildArchMapPrompt(chunkLabel: string, code: string, files: string[] = []): string {
   return [
     'You are a software architect. Below is part of a product\'s *actual source code*.',
     'Extract the *technical architecture* this code reveals — for a developer who will build part of this system.',
@@ -17,13 +17,15 @@ export function buildArchMapPrompt(chunkLabel: string, code: string): string {
     '- Notable patterns or conventions (e.g. dependency injection, pub/sub, stores).',
     'Describe CODE structure and implementation — this is the opposite of a user-facing description.',
     'Only what the code shows. Mark anything inferred as "(uncertain)".',
+    'CITATIONS: end every bullet with the file(s) it came from as [src: <path>], using ONLY these chunk paths:',
+    files.length ? files.map((f) => `  - ${f}`).join('\n') : '  (none)',
     '',
     `Target code: ${chunkLabel}`,
     '"""',
     code,
     '"""',
     '',
-    'Output: markdown bullets grouped by module/concern (module, responsibility, key types, deps, flows). This is an intermediate summary — write it in English. No prose intro, no code fences.',
+    'Output: markdown bullets grouped by module/concern (module, responsibility, key types, deps, flows), each ending with its [src: <path>] tag. This is an intermediate summary — write it in English. No prose intro, no code fences.',
   ].join('\n');
 }
 
@@ -33,6 +35,7 @@ export function buildArchMergePrompt(summaries: string): string {
     'Below are architectural summaries pulled from several code areas of the same system.',
     'Merge them by module/concern, but **never lose concrete detail** (responsibilities, key types, dependencies, flows, uncertainties).',
     'Deduplicate the same module into one; keep every distinct module and flow.',
+    'PRESERVE the [src: <path>] citations on each item; when you merge items, union their [src: …] paths.',
     '',
     'Summaries:',
     '"""',
@@ -48,6 +51,7 @@ export interface ArchContext {
   readme?: string;     // README — overview basis
   decisions?: string;  // accumulated decisions — the architectural "why"
   truncated?: boolean; // whether the code scan was cut off by size limits
+  files?: string[];    // the repo's real source paths — the allowed citation vocabulary
 }
 
 /** REDUCE: synthesize the architecture document in the house structure. */
@@ -68,6 +72,7 @@ export function buildArchDocPrompt(archSummary: string, ctx: ArchContext): strin
     '- Ground everything in the scan. Name the actual modules, types, and libraries. Do not invent.',
     '- This is technical (how it is built), NOT a user-facing product description and NOT a work log.',
     '- Where the architecture is unclear from code alone, say so briefly rather than guessing.',
+    '- CITATIONS: at the end of each "##" section, add a line `**Sources:** ' + '`path1`, `path2`' + '` listing the source files for that section, collected from the [src: …] tags in the summary. Cite ONLY files from the allowed list below, backtick each path, and omit the line if a section has no known source file.',
   ];
   if (ctx.truncated) {
     lines.push('- The code scan was cut off by size limits — note possibly-missing areas in one line.');
@@ -84,6 +89,7 @@ export function buildArchDocPrompt(archSummary: string, ctx: ArchContext): strin
   if (ctx.manifest) lines.push('', 'Manifest (deps/scripts/runtime):', '"""', ctx.manifest.slice(0, 2000), '"""');
   if (ctx.readme) lines.push('', 'README:', '"""', ctx.readme.slice(0, 4000), '"""');
   if (ctx.decisions) lines.push('', 'Accumulated decisions (the architectural "why" — reference):', '"""', ctx.decisions.slice(0, 4000), '"""');
+  if (ctx.files?.length) lines.push('', 'Allowed source files for **Sources:** citations (use ONLY these, exactly as written):', '"""', ctx.files.join('\n').slice(0, 8000), '"""');
   lines.push('', 'Output the FULL architecture document markdown only — no commentary, no code fences (```).');
   return lines.join('\n');
 }

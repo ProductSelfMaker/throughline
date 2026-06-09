@@ -20,6 +20,7 @@ import { collectUiSource, UiSource } from '../agent/project-ui-source';
 import { collectProjectFiles, chunkByBudget, ProjectCode } from '../agent/project-code';
 import { buildCodeMapPrompt, buildReduceMergePrompt, buildProductDocPrompt, DocContext } from '../domain/product-doc-prompt';
 import { buildArchMapPrompt, buildArchMergePrompt, buildArchDocPrompt, ArchContext } from '../domain/architecture-prompt';
+import { validateCitations } from '../domain/source-citations';
 import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
@@ -582,18 +583,20 @@ export class Session {
     const chunks = chunkByBudget(files, MAP_CHUNK_BUDGET);
     let mapErr: unknown;
     const maps = (await pool(chunks, MAP_CONCURRENCY, (c) =>
-      this.runner.complete(buildArchMapPrompt(c.label, c.text)).catch((e) => { mapErr = e; return ''; }),
+      this.runner.complete(buildArchMapPrompt(c.label, c.text, c.files)).catch((e) => { mapErr = e; return ''; }),
     )).filter((s) => s.trim());
     if (maps.length === 0) {
       if (mapErr) throw mapErr; // all map calls failed (e.g. overload) → surface, don't silently no-op
       return '';                // genuinely no architecture extracted
     }
 
+    const realPaths = files.map((f) => f.path);
     const ctx: ArchContext = {
       manifest: files.find((f) => /(^|\/)package\.json$/i.test(f.path))?.content,
       readme: files.find((f) => /(^|\/)readme(\.[a-z]+)?$/i.test(f.path))?.content,
       decisions: await this.decisionsAsText().catch(() => ''),
       truncated,
+      files: realPaths, // the allowed citation vocabulary
     };
 
     // collapse hierarchically if the summaries don't fit, then synthesize
@@ -612,7 +615,8 @@ export class Session {
       level = merged;
     }
     const doc = await this.runner.complete(buildArchDocPrompt(level.join('\n\n'), ctx));
-    return doc.trim() ? doc : '';
+    // drop any cited path that isn't a real repo file → every shown citation is verifiable
+    return doc.trim() ? validateCitations(doc, realPaths) : '';
   }
 
   /** Run any pending ingest immediately (tests / shutdown). */
