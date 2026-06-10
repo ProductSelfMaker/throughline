@@ -342,6 +342,36 @@ describe('Session (observer)', () => {
     expect(md).toContain('## Key Flows');                      // section body preserved
   });
 
+  it('records the build commit and flags sections whose cited files changed since', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    const DOC = '## Overview\nX\n\n## Modules\n- s\n**Sources:** `src/server/app.ts`\n';
+    const runner = {
+      complete: async (p: string) => {
+        if (p.includes('You are a software architect')) return '- server [src: src/server/app.ts]';
+        if (p.includes('You write an ARCHITECTURE document')) return DOC;
+        return '';
+      },
+    };
+    let changed: string[] = [];
+    session = new Session({
+      store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }, { '/x/s1.jsonl': 5 }),
+      ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
+      gitHead: async () => 'commit-abc',
+      gitChangedSince: async () => changed,
+      projectCode: async () => ({ files: [{ path: 'src/server/app.ts', content: 'new Hono()' }], truncated: false }),
+    });
+    await session.rebuildArchitecture();
+    expect(await session.architectureFreshness()).toEqual({ commit: 'commit-abc', stale: [] });   // fresh
+    changed = ['src/server/app.ts'];
+    expect(await session.architectureFreshness()).toEqual({ commit: 'commit-abc', stale: ['Modules'] }); // stale
+  });
+
+  it('architectureFreshness is null before any architecture build', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    session = new Session({ store, runner: completer(''), reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    expect(await session.architectureFreshness()).toBeNull();
+  });
+
   it('a failed mockup generation reports error and keeps the previous mockup', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write('## 개요\n앱\n');

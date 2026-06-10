@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fetchMockup, fetchArchitecture, fetchInfo, subscribeStatus, type AnalyticsResponse, type JobKind } from './api';
+import { fetchMockup, fetchArchitecture, fetchInfo, subscribeStatus, type AnalyticsResponse, type JobKind, type ArchFreshness } from './api';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
@@ -72,6 +72,7 @@ export function MainView({
   const [confirm, setConfirm] = useState(false);
   const [mockupHtml, setMockupHtml] = useState<string | null>(null);
   const [archMd, setArchMd] = useState<string | null>(null);
+  const [archFresh, setArchFresh] = useState<ArchFreshness | null>(null);
   const [info, setInfo] = useState<{ cwd: string; display: string } | null>(null);
   const [working, setWorking] = useState(false);
 
@@ -99,7 +100,9 @@ export function MainView({
   useEffect(() => {
     if (activeView !== 'architecture') return;
     let alive = true;
-    fetchArchitecture().then((m) => { if (alive) setArchMd(m); }).catch(() => { if (alive) setArchMd(''); });
+    fetchArchitecture()
+      .then(({ md, freshness }) => { if (alive) { setArchMd(md); setArchFresh(freshness); } })
+      .catch(() => { if (alive) { setArchMd(''); setArchFresh(null); } });
     return () => { alive = false; };
   }, [activeView, doneCounts.architecture]);
 
@@ -156,6 +159,11 @@ export function MainView({
       ) : activeView === 'architecture' ? (
         <div className="tl-doc">
           <div className="tl-doc-inner">
+            {archFresh && archFresh.stale.length ? (
+              <div className="tl-stale-banner">
+                ⚠ Built against <code>{archFresh.commit.slice(0, 7)}</code> — {archFresh.stale.length} section{archFresh.stale.length > 1 ? 's' : ''} may be stale (code changed since): {archFresh.stale.join(', ')}. <b>Rebuild</b> to refresh.
+              </div>
+            ) : null}
             {archMd === null ? (
               <p className="tl-placeholder">Loading…</p>
             ) : archMd.trim() ? (

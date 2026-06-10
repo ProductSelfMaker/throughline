@@ -34,7 +34,9 @@ export function createApp(session: Session): Hono {
   });
 
   // developer-facing architecture overview (generated on demand via POST /api/jobs/architecture)
-  app.get('/api/architecture', async (c) => c.json({ md: await session.readArchitecture() }));
+  // freshness = which sections may be stale (cited files changed since it was built)
+  app.get('/api/architecture', async (c) =>
+    c.json({ md: await session.readArchitecture(), freshness: await session.architectureFreshness() }));
 
   // project = your coding usage; self = Throughline's own usage (same shape)
   app.get('/api/analytics', async (c) => c.json({ project: await session.analytics(), self: await session.overhead() }));

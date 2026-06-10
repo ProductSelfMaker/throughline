@@ -233,6 +233,11 @@ body { margin: 0; background: #e9e6dd; }
 .tl-send svg { width: 15px; height: 15px; }
 .tl-send:disabled { opacity: .4; cursor: default; }
 
+/* architecture freshness banner — sections whose cited files changed since the doc was built */
+.tl-stale-banner { margin: 0 0 18px; padding: 11px 14px; border-radius: 9px; background: #fdf2da; border: 1px solid #e7c98c; color: #7a5a16; font-size: 13px; line-height: 1.55; }
+.tl-stale-banner code { font-family: var(--font-mono); font-size: 12px; background: rgba(122,90,22,.12); padding: 1px 5px; border-radius: 4px; }
+.tl-stale-banner b { font-weight: 650; }
+
 /* Background-job completion toasts (stacked bottom-right, click or auto-dismiss). */
 .tl-toaster { position: fixed; right: 18px; bottom: 18px; z-index: 80; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
 .tl-toast { display: inline-flex; align-items: center; gap: 9px; padding: 10px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border-2); box-shadow: var(--shadow); color: var(--text); font-size: 13px; cursor: pointer; animation: tl-toast-in .18s ease-out; }

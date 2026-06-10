@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
+import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem, ArchFreshness } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
@@ -20,7 +20,7 @@ import { collectUiSource, UiSource } from '../agent/project-ui-source';
 import { collectProjectFiles, chunkByBudget, ProjectCode } from '../agent/project-code';
 import { buildCodeMapPrompt, buildReduceMergePrompt, buildProductDocPrompt, DocContext } from '../domain/product-doc-prompt';
 import { buildArchMapPrompt, buildArchMergePrompt, buildArchDocPrompt, ArchContext } from '../domain/architecture-prompt';
-import { validateCitations } from '../domain/source-citations';
+import { validateCitations, staleSections } from '../domain/source-citations';
 import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
@@ -89,6 +89,21 @@ async function defaultGitDiff(cwd: string): Promise<string> {
   }
 }
 
+/** Current HEAD commit ('' when not a git repo). */
+async function defaultGitHead(cwd: string): Promise<string> {
+  try { return (await execFileP('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim(); }
+  catch { return ''; }
+}
+
+/** Paths changed since `commit` (working tree vs that commit; [] when no commit / not a repo). */
+async function defaultGitChangedSince(cwd: string, commit: string): Promise<string[]> {
+  if (!commit) return [];
+  try {
+    const { stdout } = await execFileP('git', ['diff', '--name-only', commit], { cwd, maxBuffer: 1024 * 1024 });
+    return stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+  } catch { return []; }
+}
+
 // Minimal runner surface this engine needs (one-shot completion only).
 interface Completer {
   complete(prompt: string, signal?: AbortSignal): Promise<string>;
@@ -104,6 +119,10 @@ export interface SessionDeps {
   cwd: string;
   debounceMs?: number;
   gitDiff?: (cwd: string) => Promise<string>;
+  /** Current HEAD commit — for recording what the architecture doc was built against. */
+  gitHead?: (cwd: string) => Promise<string>;
+  /** Paths changed since a commit — for architecture freshness. */
+  gitChangedSince?: (cwd: string, commit: string) => Promise<string[]>;
   /** Reads the observed project's real frontend source (for faithful mockups).
    *  Defaults to scanning the project cwd; injectable for tests. */
   uiSource?: (cwd: string) => Promise<UiSource>;
@@ -127,6 +146,8 @@ export class Session {
   private cwd: string;
   private debouncer: Debouncer;
   private gitDiff: (cwd: string) => Promise<string>;
+  private gitHead: (cwd: string) => Promise<string>;
+  private gitChangedSince: (cwd: string, commit: string) => Promise<string[]>;
   private uiSource: (cwd: string) => Promise<UiSource>;
   private projectCode: (cwd: string) => Promise<ProjectCode>;
   private decisionsPath: string;
@@ -134,6 +155,7 @@ export class Session {
   private decisionsCooldownMs: number;
   private mockupPath: string;
   private architecturePath: string;
+  private architectureMetaPath: string;
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
 
@@ -154,6 +176,8 @@ export class Session {
     this.cwd = deps.cwd;
     this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
+    this.gitHead = deps.gitHead ?? defaultGitHead;
+    this.gitChangedSince = deps.gitChangedSince ?? defaultGitChangedSince;
     this.uiSource = deps.uiSource ?? collectUiSource;
     this.projectCode = deps.projectCode ?? collectProjectFiles;
     this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.json');
@@ -161,12 +185,26 @@ export class Session {
     this.decisionsCooldownMs = deps.decisionsCooldownMs ?? 180_000;
     this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
     this.architecturePath = join(deps.cwd, '.throughline', 'architecture.md');
+    this.architectureMetaPath = join(deps.cwd, '.throughline', 'architecture-meta.json');
   }
 
   /** The developer-facing architecture doc ('' if not generated yet). */
   async readArchitecture(): Promise<string> {
     try { return existsSync(this.architecturePath) ? await readFile(this.architecturePath, 'utf8') : ''; }
     catch { return ''; }
+  }
+
+  /** Which sections of the architecture doc may be stale (their cited files changed since the
+   *  doc was built). null when never built / no recorded commit / no git. */
+  async architectureFreshness(): Promise<ArchFreshness | null> {
+    try {
+      if (!existsSync(this.architectureMetaPath) || !existsSync(this.architecturePath)) return null;
+      const meta = JSON.parse(await readFile(this.architectureMetaPath, 'utf8')) as { commit?: string };
+      if (!meta.commit) return null;
+      const md = await readFile(this.architecturePath, 'utf8');
+      const changed = await this.gitChangedSince(this.cwd, meta.commit);
+      return { commit: meta.commit, stale: staleSections(md, changed) };
+    } catch { return null; }
   }
   private async writeArchitecture(md: string): Promise<void> {
     await mkdir(dirname(this.architecturePath), { recursive: true });
@@ -566,7 +604,12 @@ export class Session {
     await this.runBusy(async () => {
       try {
         const next = await this.buildArchFromCode();
-        if (next.trim()) await this.writeArchitecture(next);
+        if (next.trim()) {
+          await this.writeArchitecture(next);
+          // record the commit this doc was built against (for freshness/staleness)
+          const commit = await this.gitHead(this.cwd);
+          await writeFile(this.architectureMetaPath, JSON.stringify({ commit, builtAt: Date.now() }), 'utf8');
+        }
       } catch (e) {
         failure = e; // keep the previous doc, but surface the failure to the job
       }

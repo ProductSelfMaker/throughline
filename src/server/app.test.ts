@@ -126,10 +126,10 @@ describe('GET /api/decisions', () => {
 });
 
 describe('GET /api/architecture', () => {
-  it('returns the architecture doc ("" when none yet)', async () => {
+  it('returns the architecture doc + freshness ("" / null when none yet)', async () => {
     session = mk();
     const res = await createApp(session).request('/api/architecture');
-    expect(await res.json()).toEqual({ md: '' });
+    expect(await res.json()).toEqual({ md: '', freshness: null });
   });
 });
 

@@ -1,8 +1,8 @@
 // src/web/api.ts
-import type { Analytics, WorkItem, WorkItemDetail, DecisionItem } from '../domain/types';
+import type { Analytics, WorkItem, WorkItemDetail, DecisionItem, ArchFreshness } from '../domain/types';
 
 export type SpecUpdate = { md: string; changedLines: number[] };
-export type { Analytics, WorkItem, WorkItemDetail, DecisionItem };
+export type { Analytics, WorkItem, WorkItemDetail, DecisionItem, ArchFreshness };
 /** Token analytics: the observed project's coding usage + Throughline's own usage. */
 export type AnalyticsResponse = { project: Analytics; self: Analytics | null };
 
@@ -111,11 +111,11 @@ export async function fetchMockup(): Promise<string> {
   return data.html ?? '';
 }
 
-/** The developer-facing architecture doc ('' if not generated yet). */
-export async function fetchArchitecture(): Promise<string> {
+/** The architecture doc + its freshness (which sections may be stale). */
+export async function fetchArchitecture(): Promise<{ md: string; freshness: ArchFreshness | null }> {
   const res = await fetch('/api/architecture');
-  if (!res.ok) return '';
-  const data = (await res.json()) as { md?: string };
-  return data.md ?? '';
+  if (!res.ok) return { md: '', freshness: null };
+  const data = (await res.json()) as { md?: string; freshness?: ArchFreshness | null };
+  return { md: data.md ?? '', freshness: data.freshness ?? null };
 }
 

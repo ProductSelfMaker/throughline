@@ -6,6 +6,9 @@
 
 const SOURCES_RE = /^\*\*Sources:\*\*\s*(.*)$/;
 
+const citedPaths = (sourcesLine: string): string[] =>
+  [...sourcesLine.matchAll(/`([^`]+)`/g)].map((x) => x[1].trim());
+
 export function validateCitations(md: string, realPaths: string[]): string {
   const real = new Set(realPaths);
   return md
@@ -13,10 +16,27 @@ export function validateCitations(md: string, realPaths: string[]): string {
     .flatMap((line) => {
       const m = SOURCES_RE.exec(line);
       if (!m) return [line];
-      const cited = [...m[1].matchAll(/`([^`]+)`/g)].map((x) => x[1].trim());
-      const valid = cited.filter((p) => real.has(p));
+      const valid = citedPaths(m[1]).filter((p) => real.has(p));
       if (valid.length === 0) return []; // drop the whole line (unverifiable)
       return [`**Sources:** ${valid.map((p) => '`' + p + '`').join(', ')}`];
     })
     .join('\n');
+}
+
+/** Section headings (`## …`) whose cited files intersect `changedFiles` (i.e. the code they
+ *  were built from has changed). A section with no Sources line is never stale. */
+export function staleSections(md: string, changedFiles: string[]): string[] {
+  const changed = new Set(changedFiles);
+  const stale: string[] = [];
+  let heading = '';
+  let headingStale = false;
+  const flush = () => { if (heading && headingStale) stale.push(heading); };
+  for (const line of md.split('\n')) {
+    const h = /^##\s+(.+?)\s*$/.exec(line);
+    if (h) { flush(); heading = h[1]; headingStale = false; continue; }
+    const s = SOURCES_RE.exec(line);
+    if (s && heading && citedPaths(s[1]).some((p) => changed.has(p))) headingStale = true;
+  }
+  flush();
+  return stale;
 }
