@@ -5,7 +5,8 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fetchMockup, fetchArchitecture, fetchDocFreshness, fetchInfo, subscribeStatus, type AnalyticsResponse, type JobKind, type Freshness } from './api';
+import { fetchMockup, fetchArchitecture, fetchDocFreshness, fetchInfo, subscribeStatus, fetchWorkspaces, createWorkspace, selectWorkspace, type AnalyticsResponse, type JobKind, type Freshness, type WorkspaceInfo } from './api';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
@@ -70,6 +71,7 @@ export function MainView({
   doneCounts: Record<JobKind, number>;
 }) {
   const [confirm, setConfirm] = useState(false);
+  const [activeWs, setActiveWs] = useState<WorkspaceInfo | null>(null);
   const [mockupHtml, setMockupHtml] = useState<string | null>(null);
   const [archMd, setArchMd] = useState<string | null>(null);
   const [archFresh, setArchFresh] = useState<Freshness | null>(null);
@@ -81,6 +83,9 @@ export function MainView({
   const rebuilding = rebuildKind ? running.has(rebuildKind) : false;
   const mockupBusy = running.has('mockup');
   const tidying = running.has('tidy');
+  // Phase 1: deep code generation (Rebuild/Tidy/Mockup) only on the "everything" default
+  // workspace; non-default workspaces build purely from their captured activity.
+  const codeGenAllowed = activeWs ? activeWs.isDefault : true;
 
   useEffect(() => {
     let alive = true;
@@ -119,15 +124,16 @@ export function MainView({
     <section className="tl-region tl-main">
       <div className="tl-toprow">
         <span className="wm">Throughline</span>
+        <WorkspaceSwitcher onActive={setActiveWs} />
         {info?.display ? <span className="tl-cwd" title={info.cwd}>{shortenPath(info.display)}</span> : null}
         {working ? <span className="tl-working"><span className="dot" />Working…</span> : null}
         <span className="sp" />
-        {activeView === 'mockup' ? (
+        {activeView === 'mockup' && codeGenAllowed ? (
           <button className="tl-gen" type="button" onClick={() => start('mockup')} disabled={mockupBusy}>
             {Icons.sparkle}{mockupBusy ? 'Generating…' : mockupHtml ? 'Update' : 'Generate'}
           </button>
         ) : null}
-        {activeView === 'doc' ? (
+        {activeView === 'doc' && codeGenAllowed ? (
           <button
             className="tl-rebtn"
             type="button"
@@ -139,7 +145,7 @@ export function MainView({
             {tidying ? 'Tidying…' : 'Tidy'}
           </button>
         ) : null}
-        {rebuildKind ? (
+        {rebuildKind && codeGenAllowed ? (
           <button
             className="tl-rebtn"
             type="button"

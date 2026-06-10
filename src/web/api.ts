@@ -126,3 +126,26 @@ export async function fetchDocFreshness(): Promise<Freshness | null> {
   return (await res.json()) as Freshness | null;
 }
 
+/** A workspace: a named bucket of work. The active one captures new activity. */
+export interface WorkspaceInfo { id: string; name: string; isDefault: boolean }
+
+export async function fetchWorkspaces(): Promise<{ active: string; workspaces: WorkspaceInfo[] }> {
+  const res = await fetch('/api/workspaces');
+  if (!res.ok) return { active: 'default', workspaces: [] };
+  return res.json();
+}
+export async function createWorkspace(name: string): Promise<WorkspaceInfo> {
+  const res = await fetch('/api/workspaces', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
+  if (!res.ok) throw new Error(`create workspace failed (${res.status})`);
+  return res.json();
+}
+export async function selectWorkspace(id: string): Promise<void> {
+  await fetch(`/api/workspaces/${id}/select`, { method: 'POST' });
+}
+/** Subscribe to active-workspace changes (SSE 'workspace-changed'). */
+export function subscribeWorkspace(onChange: (active: WorkspaceInfo) => void): () => void {
+  const es = new EventSource('/api/events');
+  es.addEventListener('workspace-changed', (e) => onChange(JSON.parse((e as MessageEvent).data) as WorkspaceInfo));
+  return () => es.close();
+}
+

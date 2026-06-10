@@ -10,6 +10,7 @@ import { IngestStore } from '../core/ingest-store';
 import { ClaudeCodeRunner } from '../agent/claude-code-runner';
 import { SessionLogReader } from '../agent/session-log-reader';
 import { Session } from './session';
+import { WorkspaceManager } from './workspace-manager';
 import { createApp } from './app';
 
 // Absolute path to the built web UI (repo-root/dist), resolved relative to THIS
@@ -23,16 +24,14 @@ if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
   process.exit(1);
 }
 
-// The accumulating PRD lives in the project's .throughline/ folder.
-const prdPath = join(cwd, '.throughline', 'prd.md');
-// Migrate a legacy root spec.md into .throughline/prd.md on first run.
-const legacy = join(cwd, 'spec.md');
-if (!existsSync(prdPath) && existsSync(legacy)) {
-  try {
-    mkdirSync(dirname(prdPath), { recursive: true });
-    copyFileSync(legacy, prdPath);
-  } catch {
-    // best-effort; SpecStore will scaffold DEFAULT_SPEC otherwise
+// First run only: migrate a legacy root spec.md into .throughline/prd.md so the workspace
+// manager then moves it into ws/default. (Skipped once workspaces.json exists.)
+const thrDir = join(cwd, '.throughline');
+if (!existsSync(join(thrDir, 'workspaces.json'))) {
+  const prdPath = join(thrDir, 'prd.md');
+  const legacy = join(cwd, 'spec.md');
+  if (!existsSync(prdPath) && existsSync(legacy)) {
+    try { mkdirSync(thrDir, { recursive: true }); copyFileSync(legacy, prdPath); } catch { /* best-effort */ }
   }
 }
 
@@ -41,18 +40,26 @@ if (!existsSync(prdPath) && existsSync(legacy)) {
 const scribeDir = join(cwd, '.throughline', 'agent');
 mkdirSync(scribeDir, { recursive: true });
 
-const session = new Session({
-  store: new SpecStore(prdPath),
-  runner: new ClaudeCodeRunner({ cwd: scribeDir }),
-  reader: new SessionLogReader({ cwd }),
-  // reads Throughline's own scribe-agent logs → the "overhead" token breakdown
-  selfReader: new SessionLogReader({ cwd: scribeDir }),
-  ingest: new IngestStore(cwd),
+// One shared session-log reader (the user's single terminal session), partitioned across
+// workspaces by active periods. Each workspace gets its own artifacts + checkpoint.
+const reader = new SessionLogReader({ cwd });
+const manager = new WorkspaceManager({
   cwd,
+  reader,
+  makeSession: ({ artifactsDir, broadcaster }) => new Session({
+    store: new SpecStore(join(artifactsDir, 'prd.md')),
+    runner: new ClaudeCodeRunner({ cwd: scribeDir }),
+    reader,
+    selfReader: new SessionLogReader({ cwd: scribeDir }),
+    ingest: new IngestStore(cwd, join(artifactsDir, 'ingest-state.json')),
+    cwd,
+    artifactsDir,
+    broadcaster,
+  }),
 });
-await session.init();
+await manager.init();
 
-const app = createApp(session);
+const app = createApp(manager);
 
 const hasUI = existsSync(distDir);
 if (hasUI) {
@@ -82,6 +89,6 @@ function startServer(port: number, triesLeft: number): void {
 }
 startServer(desiredPort, MAX_PORT_TRIES);
 
-const shutdown = () => { session.stop(); process.exit(0); };
+const shutdown = () => { manager.stop(); process.exit(0); };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

@@ -8,7 +8,8 @@ interface State { version: 1; sessions: Record<string, number>; }
 /** Durable ingestion checkpoint at <cwd>/.throughline/ingest-state.json. */
 export class IngestStore {
   private file: string;
-  constructor(cwd: string) { this.file = join(cwd, '.throughline', 'ingest-state.json'); }
+  /** `file` overrides the default `<cwd>/.throughline/ingest-state.json` (per-workspace path). */
+  constructor(cwd: string, file?: string) { this.file = file ?? join(cwd, '.throughline', 'ingest-state.json'); }
 
   async load(): Promise<Record<string, number>> {
     if (!existsSync(this.file)) return {};

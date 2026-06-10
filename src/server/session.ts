@@ -117,6 +117,11 @@ export interface SessionDeps {
   selfReader?: ActivityReader;
   ingest: IngestStore;
   cwd: string;
+  /** Directory for this session's artifacts (default `<cwd>/.throughline`). The workspace
+   *  manager points each workspace at its own `<cwd>/.throughline/ws/<id>`. */
+  artifactsDir?: string;
+  /** Shared event bus — inject so workspace sessions broadcast over one SSE stream. */
+  broadcaster?: Broadcaster;
   debounceMs?: number;
   gitDiff?: (cwd: string) => Promise<string>;
   /** Current HEAD commit — for recording what the architecture doc was built against. */
@@ -136,7 +141,7 @@ export interface SessionDeps {
 
 /** Observer: reads the user's agent session logs and keeps the PRD live. */
 export class Session {
-  readonly broadcaster = new Broadcaster();
+  readonly broadcaster: Broadcaster;
 
   private store: SpecStore;
   private runner: Completer;
@@ -175,19 +180,21 @@ export class Session {
     this.selfReader = deps.selfReader;
     this.ingest = deps.ingest;
     this.cwd = deps.cwd;
+    this.broadcaster = deps.broadcaster ?? new Broadcaster();
     this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
     this.gitHead = deps.gitHead ?? defaultGitHead;
     this.gitChangedSince = deps.gitChangedSince ?? defaultGitChangedSince;
     this.uiSource = deps.uiSource ?? collectUiSource;
     this.projectCode = deps.projectCode ?? collectProjectFiles;
-    this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.json');
-    this.decisionsStatePath = join(deps.cwd, '.throughline', 'decisions-state.json');
+    const adir = deps.artifactsDir ?? join(deps.cwd, '.throughline');
+    this.decisionsPath = join(adir, 'decisions.json');
+    this.decisionsStatePath = join(adir, 'decisions-state.json');
     this.decisionsCooldownMs = deps.decisionsCooldownMs ?? 180_000;
-    this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
-    this.architecturePath = join(deps.cwd, '.throughline', 'architecture.md');
-    this.architectureMetaPath = join(deps.cwd, '.throughline', 'architecture-meta.json');
-    this.prdMetaPath = join(deps.cwd, '.throughline', 'prd-meta.json');
+    this.mockupPath = join(adir, 'mockup.html');
+    this.architecturePath = join(adir, 'architecture.md');
+    this.architectureMetaPath = join(adir, 'architecture-meta.json');
+    this.prdMetaPath = join(adir, 'prd-meta.json');
   }
 
   /** The developer-facing architecture doc ('' if not generated yet). */
@@ -364,7 +371,7 @@ export class Session {
    *  history is far too large to ingest at once); otherwise catch up. Then watch.
    *  The catch-up ingest runs in the background — it makes an LLM call, so it must
    *  never block the HTTP server from starting. */
-  async init(): Promise<void> {
+  async init(opts: { watch?: boolean } = {}): Promise<void> {
     this.checkpoint = await this.ingest.load();
     if (Object.keys(this.checkpoint).length === 0) {
       this.checkpoint = await this.reader.currentOffsets();
@@ -372,11 +379,23 @@ export class Session {
     } else {
       void this.ingestNow(); // fire-and-forget: catch up without blocking startup
     }
-    this.unwatch = this.reader.watch(() => {
-      this.pendingActivity = true; // observed agent is active; an update is coming
-      this.syncWorking();
-      this.debouncer.schedule(() => { void this.ingestNow(); });
-    });
+    // When the workspace manager drives ingest (watch:false), it calls notifyActivity() on the
+    // active session only, so activity routes to one workspace at a time.
+    if (opts.watch ?? true) this.unwatch = this.reader.watch(() => this.notifyActivity());
+  }
+
+  /** React to new observed activity: mark pending, reflect "working", and debounce an ingest. */
+  notifyActivity(): void {
+    this.pendingActivity = true;
+    this.syncWorking();
+    this.debouncer.schedule(() => { void this.ingestNow(); });
+  }
+
+  /** Start capturing from "now": advance the checkpoint to the current log offsets so prior
+   *  activity (which belonged to another workspace) is not retroactively ingested. */
+  async startFresh(): Promise<void> {
+    this.checkpoint = await this.reader.currentOffsets();
+    await this.ingest.save(this.checkpoint);
   }
 
   readSpec(): Promise<string> {
