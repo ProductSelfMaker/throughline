@@ -133,6 +133,14 @@ describe('GET /api/architecture', () => {
   });
 });
 
+describe('GET /api/doc-freshness', () => {
+  it('returns null before any doc Rebuild', async () => {
+    session = mk();
+    const res = await createApp(session).request('/api/doc-freshness');
+    expect(await res.json()).toBeNull();
+  });
+});
+
 describe('GET /api/analytics', () => {
   it('returns project analytics + self (null when no self-reader is wired)', async () => {
     session = mk();

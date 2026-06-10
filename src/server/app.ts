@@ -38,6 +38,10 @@ export function createApp(session: Session): Hono {
   app.get('/api/architecture', async (c) =>
     c.json({ md: await session.readArchitecture(), freshness: await session.architectureFreshness() }));
 
+  // product-doc freshness (the doc itself streams via /api/events); which sections' cited files
+  // changed since the last full Rebuild → null when never rebuilt / no git.
+  app.get('/api/doc-freshness', async (c) => c.json(await session.docFreshness()));
+
   // project = your coding usage; self = Throughline's own usage (same shape)
   app.get('/api/analytics', async (c) => c.json({ project: await session.analytics(), self: await session.overhead() }));
 

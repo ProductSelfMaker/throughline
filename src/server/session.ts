@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem, ArchFreshness } from '../domain/types';
+import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem, Freshness } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
@@ -156,6 +156,7 @@ export class Session {
   private mockupPath: string;
   private architecturePath: string;
   private architectureMetaPath: string;
+  private prdMetaPath: string;
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
 
@@ -186,6 +187,7 @@ export class Session {
     this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
     this.architecturePath = join(deps.cwd, '.throughline', 'architecture.md');
     this.architectureMetaPath = join(deps.cwd, '.throughline', 'architecture-meta.json');
+    this.prdMetaPath = join(deps.cwd, '.throughline', 'prd-meta.json');
   }
 
   /** The developer-facing architecture doc ('' if not generated yet). */
@@ -194,17 +196,25 @@ export class Session {
     catch { return ''; }
   }
 
-  /** Which sections of the architecture doc may be stale (their cited files changed since the
-   *  doc was built). null when never built / no recorded commit / no git. */
-  async architectureFreshness(): Promise<ArchFreshness | null> {
+  /** Which doc sections may be stale (their cited files changed since it was built against the
+   *  recorded commit). Shared by the architecture + product docs. null when never built / no
+   *  recorded commit / no git. */
+  private async computeFreshness(metaPath: string, md: string): Promise<Freshness | null> {
     try {
-      if (!existsSync(this.architectureMetaPath) || !existsSync(this.architecturePath)) return null;
-      const meta = JSON.parse(await readFile(this.architectureMetaPath, 'utf8')) as { commit?: string };
+      if (!md.trim() || !existsSync(metaPath)) return null;
+      const meta = JSON.parse(await readFile(metaPath, 'utf8')) as { commit?: string };
       if (!meta.commit) return null;
-      const md = await readFile(this.architecturePath, 'utf8');
       const changed = await this.gitChangedSince(this.cwd, meta.commit);
       return { commit: meta.commit, stale: staleSections(md, changed) };
     } catch { return null; }
+  }
+  async architectureFreshness(): Promise<Freshness | null> {
+    return this.computeFreshness(this.architectureMetaPath, await this.readArchitecture());
+  }
+  /** Freshness of the product doc — measured against the last full Rebuild (the scribe keeps
+   *  the prose current between rebuilds, but citations refresh only on Rebuild). */
+  async docFreshness(): Promise<Freshness | null> {
+    return this.computeFreshness(this.prdMetaPath, await this.store.read());
   }
   private async writeArchitecture(md: string): Promise<void> {
     await mkdir(dirname(this.architecturePath), { recursive: true });
@@ -540,7 +550,12 @@ export class Session {
 
       this.checkpoint = await this.reader.currentOffsets();
       await this.ingest.save(this.checkpoint);
-      if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+      if (applied.ok) {
+        // record the commit this grounded doc was built against (for freshness/staleness)
+        const commit = await this.gitHead(this.cwd);
+        await writeFile(this.prdMetaPath, JSON.stringify({ commit, builtAt: Date.now() }), 'utf8').catch(() => {});
+        this.broadcaster.broadcast('spec-updated', applied.result);
+      }
     });
   }
 
@@ -557,9 +572,10 @@ export class Session {
       return raw.trim() ? raw : DEFAULT_SPEC;
     }
 
+    const realPaths = files.map((f) => f.path);
     const chunks = chunkByBudget(files, MAP_CHUNK_BUDGET);
     const maps = (await pool(chunks, MAP_CONCURRENCY, (c) =>
-      this.runner.complete(buildCodeMapPrompt(c.label, c.text)).catch(() => ''),
+      this.runner.complete(buildCodeMapPrompt(c.label, c.text, c.files)).catch(() => ''),
     )).filter((s) => s.trim());
 
     const ctx: DocContext = {
@@ -568,8 +584,10 @@ export class Session {
       decisions: await this.decisionsAsText().catch(() => ''),
       activity: activityExcerpt,
       truncated,
+      files: realPaths, // the allowed citation vocabulary
     };
-    return this.reduceToDoc(maps, ctx);
+    // drop any cited path that isn't a real repo file → every shown citation is verifiable
+    return validateCitations(await this.reduceToDoc(maps, ctx), realPaths);
   }
 
   /** Collapse per-chunk summaries (hierarchically if large) then synthesize the doc. */

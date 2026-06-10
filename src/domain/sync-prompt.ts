@@ -18,6 +18,7 @@ export function buildSyncPrompt(
     '4) Never write a work log (steps, todos, commit messages) — that is history.',
     '5) Collect anything undecided or contradictory as "- " bullets under "## Open Questions".',
     '6) Do not invent features; reflect only what the activity/diff supports.',
+    '7) PRESERVE any existing "**Sources:**" citation lines verbatim; do not add, change, or remove them (they are maintained by the Rebuild pass).',
     'LANGUAGE: keep the two spine headings exactly in English, but write everything else — feature section names and all prose — in the SAME language the user writes in (infer it from the activity excerpt). Do not translate the user\'s language to English.',
     '',
     'Current document:',

@@ -76,9 +76,10 @@ export interface DecisionItem {
   source?: { file: string; start: number; end: number }; // origin turn (→ history detail)
 }
 
-/** Freshness of the Architecture doc: the commit it was built against + sections whose cited
- *  files have changed since (so they may be stale). null when never built / no git. */
-export interface ArchFreshness {
+/** Freshness of a code-grounded doc (Architecture or product doc): the commit it was built
+ *  against + sections whose cited files have changed since (so they may be stale). null when
+ *  never built / no git. */
+export interface Freshness {
   commit: string;
   stale: string[]; // section headings that may be stale
 }

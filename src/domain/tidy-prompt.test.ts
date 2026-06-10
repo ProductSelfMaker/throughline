@@ -11,4 +11,8 @@ describe('buildTidyPrompt', () => {
     expect(p).toMatch(/do not (add|invent)/i);     // no new information
     expect(p.toLowerCase()).toContain('language');  // preserve the doc's language
   });
+
+  it('preserves existing Sources citation lines', () => {
+    expect(buildTidyPrompt('## X\n**Sources:** `a.ts`\n')).toMatch(/preserve.*Sources/i);
+  });
 });

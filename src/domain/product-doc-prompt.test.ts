@@ -4,10 +4,16 @@ import { buildCodeMapPrompt, buildReduceMergePrompt, buildProductDocPrompt } fro
 
 describe('buildCodeMapPrompt', () => {
   it('embeds the code and asks for user-facing behavior, not code internals', () => {
-    const p = buildCodeMapPrompt('src/App.tsx', '<button>저장</button>');
+    const p = buildCodeMapPrompt('src/App.tsx', '<button>저장</button>', ['src/App.tsx']);
     expect(p).toContain('<button>저장</button>');
     expect(p).toContain('user-visible');     // product perspective
     expect(p).toContain('implementation');   // explicitly excludes implementation
+  });
+
+  it('lists the chunk files and asks to tag each item with a [src:] citation', () => {
+    const p = buildCodeMapPrompt('chunk', 'code', ['src/a.ts', 'src/b.ts']);
+    expect(p).toContain('src/a.ts');
+    expect(p).toContain('[src:');
   });
 });
 
@@ -35,5 +41,12 @@ describe('buildProductDocPrompt', () => {
     expect(p).toContain('cut off by size limits');     // truncation note included
     expect(p).toContain('# Demo');                     // README context
     expect(p).toContain('옵저버 모델');                // decisions context (user's language preserved)
+  });
+
+  it('asks for per-section Sources lines citing only the provided files', () => {
+    const p = buildProductDocPrompt('- x [src: src/a.ts]', { files: ['src/a.ts', 'src/b.ts'] });
+    expect(p).toContain('**Sources:**');
+    expect(p).toContain('src/a.ts');
+    expect(p.toLowerCase()).toContain('only');
   });
 });

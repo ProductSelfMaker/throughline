@@ -372,6 +372,41 @@ describe('Session (observer)', () => {
     expect(await session.architectureFreshness()).toBeNull();
   });
 
+  it('doc Rebuild grounds the doc (validated citations), records the commit, and flags stale sections', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    const DOC = '## Overview\nX\n\n## Save\n- save button\n**Sources:** `src/app.ts`, `src/ghost.ts`\n\n## Open Questions\n- q\n';
+    const runner = {
+      complete: async (p: string) => {
+        if (p.includes('product analyst')) return '- save [src: src/app.ts]';
+        if (p.includes('write a PRODUCT document')) return DOC;
+        return DOC;
+      },
+    };
+    let changed: string[] = [];
+    session = new Session({
+      store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }, { '/x/s1.jsonl': 5 }, '사용자: 최근'),
+      ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
+      gitHead: async () => 'doc-commit',
+      gitChangedSince: async () => changed,
+      projectCode: async () => ({ files: [{ path: 'src/app.ts', content: 'x' }], truncated: false }),
+    });
+    const updated = new Promise<ScribeResult>((res) => session!.broadcaster.subscribe((ev, d) => { if (ev === 'spec-updated') res(d as ScribeResult); }));
+    await session.rebuild();
+    await updated;
+    const md = await store.read();
+    expect(md).toContain('**Sources:** `src/app.ts`'); // real cited file kept
+    expect(md).not.toContain('ghost');                  // hallucinated path dropped
+    expect(await session.docFreshness()).toEqual({ commit: 'doc-commit', stale: [] }); // fresh
+    changed = ['src/app.ts'];
+    expect(await session.docFreshness()).toEqual({ commit: 'doc-commit', stale: ['Save'] }); // stale
+  });
+
+  it('docFreshness is null before any doc Rebuild', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    session = new Session({ store, runner: completer(''), reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    expect(await session.docFreshness()).toBeNull();
+  });
+
   it('a failed mockup generation reports error and keeps the previous mockup', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write('## 개요\n앱\n');

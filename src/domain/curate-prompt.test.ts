@@ -12,4 +12,8 @@ describe('buildCuratePrompt', () => {
     expect(p).toContain('x');
     expect(p).toContain('FULL');
   });
+
+  it('preserves existing Sources citation lines', () => {
+    expect(buildCuratePrompt('## X\n**Sources:** `a.ts`\n', 'do x', '')).toMatch(/preserve.*Sources/i);
+  });
 });

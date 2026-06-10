@@ -1,8 +1,8 @@
 // src/web/api.ts
-import type { Analytics, WorkItem, WorkItemDetail, DecisionItem, ArchFreshness } from '../domain/types';
+import type { Analytics, WorkItem, WorkItemDetail, DecisionItem, Freshness } from '../domain/types';
 
 export type SpecUpdate = { md: string; changedLines: number[] };
-export type { Analytics, WorkItem, WorkItemDetail, DecisionItem, ArchFreshness };
+export type { Analytics, WorkItem, WorkItemDetail, DecisionItem, Freshness };
 /** Token analytics: the observed project's coding usage + Throughline's own usage. */
 export type AnalyticsResponse = { project: Analytics; self: Analytics | null };
 
@@ -112,10 +112,17 @@ export async function fetchMockup(): Promise<string> {
 }
 
 /** The architecture doc + its freshness (which sections may be stale). */
-export async function fetchArchitecture(): Promise<{ md: string; freshness: ArchFreshness | null }> {
+export async function fetchArchitecture(): Promise<{ md: string; freshness: Freshness | null }> {
   const res = await fetch('/api/architecture');
   if (!res.ok) return { md: '', freshness: null };
-  const data = (await res.json()) as { md?: string; freshness?: ArchFreshness | null };
+  const data = (await res.json()) as { md?: string; freshness?: Freshness | null };
   return { md: data.md ?? '', freshness: data.freshness ?? null };
+}
+
+/** Product-doc freshness — which sections' cited files changed since the last Rebuild (null if none). */
+export async function fetchDocFreshness(): Promise<Freshness | null> {
+  const res = await fetch('/api/doc-freshness');
+  if (!res.ok) return null;
+  return (await res.json()) as Freshness | null;
 }
 

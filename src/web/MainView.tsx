@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fetchMockup, fetchArchitecture, fetchInfo, subscribeStatus, type AnalyticsResponse, type JobKind, type ArchFreshness } from './api';
+import { fetchMockup, fetchArchitecture, fetchDocFreshness, fetchInfo, subscribeStatus, type AnalyticsResponse, type JobKind, type Freshness } from './api';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
@@ -72,7 +72,8 @@ export function MainView({
   const [confirm, setConfirm] = useState(false);
   const [mockupHtml, setMockupHtml] = useState<string | null>(null);
   const [archMd, setArchMd] = useState<string | null>(null);
-  const [archFresh, setArchFresh] = useState<ArchFreshness | null>(null);
+  const [archFresh, setArchFresh] = useState<Freshness | null>(null);
+  const [docFresh, setDocFresh] = useState<Freshness | null>(null);
   const [info, setInfo] = useState<{ cwd: string; display: string } | null>(null);
   const [working, setWorking] = useState(false);
 
@@ -105,6 +106,14 @@ export function MainView({
       .catch(() => { if (alive) { setArchMd(''); setArchFresh(null); } });
     return () => { alive = false; };
   }, [activeView, doneCounts.architecture]);
+
+  // product-doc freshness: refresh on entering the doc view and after each doc rebuild.
+  useEffect(() => {
+    if (activeView !== 'doc') return;
+    let alive = true;
+    fetchDocFreshness().then((f) => { if (alive) setDocFresh(f); }).catch(() => { if (alive) setDocFresh(null); });
+    return () => { alive = false; };
+  }, [activeView, doneCounts.doc]);
 
   return (
     <section className="tl-region tl-main">
@@ -149,6 +158,11 @@ export function MainView({
       {activeView === 'doc' ? (
         <div className="tl-doc">
           <div className="tl-doc-inner">
+            {docFresh && docFresh.stale.length ? (
+              <div className="tl-stale-banner">
+                ⚠ Citations as of <code>{docFresh.commit.slice(0, 7)}</code> — {docFresh.stale.length} section{docFresh.stale.length > 1 ? "s'" : "'s"} cited code changed since: {docFresh.stale.join(', ')}. <b>Rebuild</b> to refresh grounding.
+              </div>
+            ) : null}
             {md.trim() ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripFrontmatter(md)}</ReactMarkdown>
             ) : (

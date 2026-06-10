@@ -12,4 +12,8 @@ describe('buildSyncPrompt', () => {
     expect(prompt).toContain('login.tsx');
     expect(prompt).toContain('FULL');
   });
+
+  it('preserves existing Sources citation lines through the incremental update', () => {
+    expect(buildSyncPrompt('## X\n**Sources:** `a.ts`\n', 'act', '')).toMatch(/preserve.*Sources/i);
+  });
 });

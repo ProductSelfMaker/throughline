@@ -14,6 +14,7 @@ export function buildTidyPrompt(currentPrd: string): string {
     '- Reorder sections and bullets into a logical reading order and tighten wording — without dropping any detail, policy, edge case, or state.',
     `- Keep the English spine (${SPINE_HEADINGS.join(' , ')}) and every existing feature section. Preserve all Open Questions.`,
     'Rules: preserve every fact and nuance. Do NOT add, invent, remove, or change any described feature or behavior — this is restructuring, not rewriting meaning.',
+    'PRESERVE any existing "**Sources:**" citation lines verbatim, keeping each with its section; do not add, change, or remove them.',
     'LANGUAGE: keep the two spine headings in English; write all other content in the same language the document already uses. Do not translate it.',
     '',
     'Current document:',
