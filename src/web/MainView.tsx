@@ -209,7 +209,9 @@ export function MainView({
             ) : archMd.trim() ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripFrontmatter(archMd)}</ReactMarkdown>
             ) : (
-              <p className="tl-placeholder">Press <b>Rebuild</b> to generate a developer-facing architecture overview from a scan of your codebase.</p>
+              <p className="tl-placeholder">{codeGenAllowed
+                ? <>Press <b>Rebuild</b> to generate a developer-facing architecture overview from a scan of your codebase.</>
+                : 'Architecture is built on the Default workspace. This workspace captures activity only.'}</p>
             )}
           </div>
         </div>
@@ -220,7 +222,7 @@ export function MainView({
       ) : activeView === 'decisions' ? (
         <DecisionsView />
       ) : (
-        <MockupView html={mockupHtml} busy={mockupBusy} />
+        <MockupView html={mockupHtml} busy={mockupBusy} canGenerate={codeGenAllowed} />
       )}
 
       {confirm && rebuildKind ? (

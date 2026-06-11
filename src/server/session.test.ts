@@ -109,6 +109,18 @@ describe('Session (observer)', () => {
     expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 77 });
   });
 
+  it('rebuild keeps the existing doc when the scan yields only the empty skeleton (no clobber)', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## 개요\nIMPORTANT existing content\n\n## Open Questions\n- q\n');
+    const reader = new FakeReader({ excerpt: '', advanced: {} }, { '/x/s1.jsonl': 5 }, ''); // no source, no recent activity
+    session = new Session({
+      store, runner: completer(''), reader, ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
+      projectCode: async () => ({ files: [], truncated: false }), // → buildDocFromCode returns DEFAULT_SPEC
+    });
+    await session.rebuild();
+    expect(await store.read()).toContain('IMPORTANT existing content'); // preserved, not wiped to the skeleton
+  });
+
   it('decisions ledger: accumulates new decisions from new turns, dedupes, links source & supersedes', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     let offsets: Record<string, number> = { '/x/s1.jsonl': 10 };

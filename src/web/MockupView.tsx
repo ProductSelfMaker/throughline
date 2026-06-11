@@ -8,7 +8,7 @@ const MIN = 0.2;
 const MAX = 3;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-export function MockupView({ html, busy }: { html: string | null; busy: boolean }) {
+export function MockupView({ html, busy, canGenerate = true }: { html: string | null; busy: boolean; canGenerate?: boolean }) {
   const vpRef = useRef<HTMLDivElement>(null);
   // x/y = pan in screen px, s = zoom scale. transform = translate(x,y) scale(s).
   const [t, setT] = useState({ x: 24, y: 24, s: 1 });
@@ -68,7 +68,11 @@ export function MockupView({ html, busy }: { html: string | null; busy: boolean 
     return (
       <div className="tl-placeholder-wrap">
         <p className="tl-placeholder">
-          {busy ? 'Generating…' : 'Press "Generate" at the top to lay out a faithful mockup of the real screens on the canvas.'}
+          {busy
+            ? 'Generating…'
+            : canGenerate
+              ? 'Press "Generate" at the top to lay out a faithful mockup of the real screens on the canvas.'
+              : 'The mockup is built on the Default workspace. This workspace captures activity only.'}
         </p>
       </div>
     );

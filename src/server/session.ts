@@ -573,7 +573,12 @@ export class Session {
         nextDoc = DEFAULT_SPEC;
       }
       const previous = await this.store.read();
-      const applied = await applySpecUpdate(this.store, nextDoc, previous);
+      // Never replace a real doc with the empty skeleton (a failed/empty scan). Keep what's
+      // there so a bad rebuild can't wipe the user's document.
+      const produced = nextDoc.trim() && nextDoc.trim() !== DEFAULT_SPEC.trim();
+      const applied = produced
+        ? await applySpecUpdate(this.store, nextDoc, previous)
+        : { ok: false as const, errors: ['empty rebuild — kept previous doc'] };
 
       this.checkpoint = await this.reader.currentOffsets();
       await this.ingest.save(this.checkpoint);
