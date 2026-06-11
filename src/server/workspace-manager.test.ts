@@ -8,7 +8,7 @@ import type { ActivityReader } from '../domain/types';
 
 /** A minimal Session stub recording the manager's calls. */
 function stubSession(spec = '## Overview\n') {
-  const calls = { init: 0, notify: 0, fresh: 0 };
+  const calls = { init: 0, notify: 0, fresh: 0, replaced: [] as string[] };
   const s = {
     calls,
     init: async () => { calls.init += 1; },
@@ -16,6 +16,7 @@ function stubSession(spec = '## Overview\n') {
     startFresh: async () => { calls.fresh += 1; },
     readSpec: async () => spec,
     readDecisions: async () => [],
+    replaceDoc: async (md: string) => { calls.replaced.push(md); },
     flush: () => {},
     stop: () => {},
   };
@@ -99,6 +100,18 @@ describe('WorkspaceManager', () => {
     expect(res.md).toContain('RESOLVED.');
     expect(res.conflicts).toEqual([]);
     expect((await mgr.readUnified()).md).toContain('RESOLVED.'); // persisted
+  });
+
+  it('applyUnified writes the unified doc into the default workspace', async () => {
+    const reader = { watch: () => () => {} } as unknown as ActivityReader;
+    const made: Record<string, ReturnType<typeof stubSession>> = {};
+    const runner = { complete: async (p: string) => (p.includes('You merge several PRODUCT documents') ? '## Overview\nMERGED-X.\n<!--CONFLICTS [] CONFLICTS-->' : '') };
+    mgr = new WorkspaceManager({ cwd: dir, reader, runner, makeSession: ({ id }) => { const s = stubSession(); made[id] = s; return s; } });
+    await mgr.init();
+    await mgr.create('Beta');
+    await mgr.mergeAll();
+    expect(await mgr.applyUnified()).toBe(true);
+    expect(made['default'].calls.replaced[0]).toContain('MERGED-X.'); // default doc became the unified
   });
 
   it('a single workspace merges to itself with no LLM call and no conflicts', async () => {

@@ -18,6 +18,7 @@ export interface AppHost {
   mergeAll(): Promise<Unified>;
   resolveConflict(id: string, answer: string): Promise<Unified>;
   readUnified(): Promise<Unified>;
+  applyUnified(): Promise<boolean>;
 }
 
 export function createApp(host: AppHost): Hono {
@@ -55,6 +56,10 @@ export function createApp(host: AppHost): Hono {
     const body = await c.req.json<{ id?: string; answer?: string }>().catch(() => ({} as { id?: string; answer?: string }));
     if (!body.id || !(body.answer ?? '').trim()) return c.json({ error: 'id and answer required' }, 400);
     return c.json(await host.resolveConflict(body.id, body.answer!.trim()));
+  });
+  app.post('/api/unified/apply', async (c) => {
+    const ok = await host.applyUnified();
+    return ok ? c.json({ ok: true }) : c.json({ error: 'nothing to apply' }, 400);
   });
 
   app.post('/api/curate', async (c) => {

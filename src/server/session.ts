@@ -402,6 +402,14 @@ export class Session {
     return this.store.read();
   }
 
+  /** Replace this workspace's doc with `md` (spine-healed) and broadcast. Used to apply a
+   *  unified merge result into the default workspace. */
+  async replaceDoc(md: string): Promise<void> {
+    const previous = await this.store.read();
+    const applied = await applySpecUpdate(this.store, md, previous);
+    if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+  }
+
   /** The project directory this instance is observing. */
   projectDir(): string {
     return this.cwd;

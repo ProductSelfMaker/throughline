@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { mergeUnified, resolveConflict, type Conflict } from './api';
+import { mergeUnified, resolveConflict, applyUnified, type Conflict } from './api';
 
 export function MergeView({ onClose }: { onClose: () => void }) {
   const [md, setMd] = useState<string | null>(null);
@@ -23,6 +23,10 @@ export function MergeView({ onClose }: { onClose: () => void }) {
   }, []);
 
   const current = conflicts[0];
+  const apply = async () => {
+    setBusy(true);
+    try { await applyUnified(); onClose(); } catch { setBusy(false); }
+  };
   const submit = async () => {
     if (!current || !answer.trim() || busy) return;
     setBusy(true);
@@ -72,7 +76,14 @@ export function MergeView({ onClose }: { onClose: () => void }) {
                 </div>
               </>
             ) : (
-              <div className="tl-merge-done">✓ All conflicts resolved — this is the unified document.</div>
+              <div className="tl-merge-done">
+                <span>✓ All conflicts resolved — this is the unified document.</span>
+                {md && md.trim() ? (
+                  <button type="button" className="tl-btn-solid" onClick={() => void apply()} disabled={busy} title="Make this the Default workspace's document">
+                    {busy ? 'Applying…' : 'Apply as Default document'}
+                  </button>
+                ) : null}
+              </div>
             )}
           </div>
         </div>

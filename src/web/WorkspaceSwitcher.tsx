@@ -9,6 +9,8 @@ export function WorkspaceSwitcher({ onActive }: { onActive: (ws: WorkspaceInfo) 
   const [list, setList] = useState<WorkspaceInfo[]>([]);
   const [activeId, setActiveId] = useState('default');
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
   const ref = useRef<HTMLDivElement>(null);
 
   const reload = () => fetchWorkspaces().then(({ active, workspaces }) => {
@@ -46,11 +48,12 @@ export function WorkspaceSwitcher({ onActive }: { onActive: (ws: WorkspaceInfo) 
     // if it was active, the server switched to default (workspace-changed → remount); else refresh the list
     if (w.id !== activeId) await reload();
   };
-  const add = async () => {
-    const name = window.prompt('New workspace name')?.trim();
-    setOpen(false);
-    if (!name) return;
-    const ws = await createWorkspace(name);
+  const openCreate = () => { setOpen(false); setName(''); setCreating(true); };
+  const create = async () => {
+    const n = name.trim();
+    if (!n) return;
+    setCreating(false);
+    const ws = await createWorkspace(n);
     await selectWorkspace(ws.id);
   };
 
@@ -74,7 +77,28 @@ export function WorkspaceSwitcher({ onActive }: { onActive: (ws: WorkspaceInfo) 
             </div>
           ))}
           <div className="tl-ws-sep" />
-          <button type="button" className="tl-ws-item tl-ws-new" onClick={() => void add()}>+ New workspace</button>
+          <button type="button" className="tl-ws-item tl-ws-new" onClick={openCreate}>+ New workspace</button>
+        </div>
+      ) : null}
+
+      {creating ? (
+        <div className="tl-modal-overlay tl-modal-fixed" onClick={() => setCreating(false)}>
+          <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tl-modal-title">New workspace</div>
+            <p className="tl-modal-body">Name it. Work you do while it&apos;s active is captured here, separate from other workspaces.</p>
+            <input
+              className="tl-ws-name"
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') setCreating(false); }}
+              placeholder="e.g. Billing, Auth, Onboarding"
+            />
+            <div className="tl-modal-actions">
+              <button className="tl-btn-ghost" type="button" onClick={() => setCreating(false)}>Cancel</button>
+              <button className="tl-btn-solid" type="button" onClick={() => void create()} disabled={!name.trim()}>Create</button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

@@ -441,6 +441,16 @@ describe('Session (observer)', () => {
     expect(await session.readArchitecture()).toBe('');
   });
 
+  it('replaceDoc writes the given doc (spine-healed) and broadcasts spec-updated', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## Overview\nold\n');
+    session = new Session({ store, runner: completer(''), reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    const updated = new Promise<ScribeResult>((res) => session!.broadcaster.subscribe((ev, d) => { if (ev === 'spec-updated') res(d as ScribeResult); }));
+    await session.replaceDoc('## Overview\nNEW unified content\n\n## Open Questions\n- q\n');
+    await updated;
+    expect(await store.read()).toContain('NEW unified content');
+  });
+
   it('startJob("tidy") reorganizes the current doc and broadcasts spec-updated', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write('## Overview\nX\n\n## 로그인\nA\nA\n\n## Open Questions\n- q\n');

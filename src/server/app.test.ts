@@ -51,6 +51,7 @@ function host(s: Session) {
     mergeAll: async () => ({ md: '## Overview\nMERGED', conflicts: [{ id: 'c1', question: 'A vs B?' }] }),
     resolveConflict: async (_id: string, _answer: string) => ({ md: '## Overview\nRESOLVED', conflicts: [] }),
     readUnified: async () => ({ md: '', conflicts: [] }),
+    applyUnified: async () => true,
   };
 }
 
@@ -213,5 +214,6 @@ describe('/api/unified', () => {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'c1', answer: '자동' }),
     })).json();
     expect(resolved).toEqual({ md: '## Overview\nRESOLVED', conflicts: [] });
+    expect(await (await app.request('/api/unified/apply', { method: 'POST' })).json()).toEqual({ ok: true });
   });
 });

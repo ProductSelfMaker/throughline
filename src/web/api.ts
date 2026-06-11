@@ -159,6 +159,11 @@ export async function resolveConflict(id: string, answer: string): Promise<Unifi
   if (!res.ok) throw new Error(`resolve failed (${res.status})`);
   return res.json();
 }
+/** Apply the unified doc as the default workspace's document ("final integration"). */
+export async function applyUnified(): Promise<void> {
+  const res = await fetch('/api/unified/apply', { method: 'POST' });
+  if (!res.ok) throw new Error(`apply failed (${res.status})`);
+}
 /** Subscribe to active-workspace changes (SSE 'workspace-changed'). */
 export function subscribeWorkspace(onChange: (active: WorkspaceInfo) => void): () => void {
   const es = new EventSource('/api/events');

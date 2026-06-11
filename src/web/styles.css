@@ -268,7 +268,14 @@ body { margin: 0; background: #e9e6dd; }
 .tl-merge-input textarea { flex: 1; resize: none; border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; line-height: 1.5; background: var(--panel); color: var(--text); outline: none; }
 .tl-merge-input textarea:focus { border-color: var(--border-2); }
 .tl-merge-input .tl-btn-solid { height: 36px; white-space: nowrap; }
-.tl-merge-done { font-size: 13.5px; color: #2f7d4a; }
+.tl-merge-done { display: flex; align-items: center; gap: 14px; font-size: 13.5px; color: #2f7d4a; }
+.tl-merge-done .sp, .tl-merge-done span { flex: 1; }
+.tl-merge-done .tl-btn-solid { flex: 0 0 auto; height: 34px; }
+
+/* New-workspace modal (fixed overlay so it covers the viewport regardless of mount point) */
+.tl-modal-fixed { position: fixed; }
+.tl-ws-name { width: 100%; box-sizing: border-box; margin: 0 0 18px; height: 38px; padding: 0 12px; border: 1px solid var(--border-2); border-radius: 9px; background: var(--inset); color: var(--text); font: inherit; font-size: 14px; outline: none; }
+.tl-ws-name:focus { border-color: var(--text-3); background: var(--panel); }
 
 /* Background-job completion toasts (stacked bottom-right, click or auto-dismiss). */
 .tl-toaster { position: fixed; right: 18px; bottom: 18px; z-index: 80; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }

@@ -182,6 +182,15 @@ export class WorkspaceManager {
     return u;
   }
 
+  /** Apply the unified doc as the DEFAULT workspace's document ("final integration"). */
+  async applyUnified(): Promise<boolean> {
+    const u = await this.readUnified();
+    const def = this.sessions.get(DEFAULT_ID);
+    if (!u.md.trim() || !def) return false;
+    await def.replaceDoc(u.md);
+    return true;
+  }
+
   /** Apply the user's chat answer to one conflict; updates the unified doc, drops the conflict. */
   async resolveConflict(id: string, answer: string): Promise<Unified> {
     const cur = await this.readUnified();
