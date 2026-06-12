@@ -173,6 +173,39 @@ describe('Session (observer)', () => {
     expect(calls).toBe(2);
   });
 
+  it('chat replies and edits the doc when a DOC block is returned', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## Overview\nold\n\n## Open Questions\n- q\n');
+    const runner = { complete: async () => 'Added a Risks section.\n<!--DOC\n## Overview\nold\n\n## Risks\n- r\n\n## Open Questions\n- q\nDOC-->' };
+    session = new Session({ store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    const updated = new Promise<ScribeResult>((res) => session!.broadcaster.subscribe((ev, d) => { if (ev === 'spec-updated') res(d as ScribeResult); }));
+    const { reply } = await session.chat([{ role: 'user', text: 'add a risks section' }]);
+    expect(reply).toBe('Added a Risks section.');
+    await updated;
+    expect(await store.read()).toContain('## Risks');
+  });
+
+  it('chat replies without editing when there is no DOC block', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## Overview\nKEEP THIS\n');
+    const runner = { complete: async () => 'It auto-saves on blur.' };
+    session = new Session({ store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    const { reply } = await session.chat([{ role: 'user', text: 'how does saving work?' }]);
+    expect(reply).toBe('It auto-saves on blur.');
+    expect(await store.read()).toContain('KEEP THIS'); // doc unchanged
+  });
+
+  it('tidyDoc posts confirmation questions to the chat (chat-message)', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## Overview\nx\n\n## Open Questions\n- q\n');
+    const runner = { complete: async () => '## Overview\nx\n\n## Open Questions\n- q\n<!--CONFIRM ["Merge Login and Sign-in into one section?"] CONFIRM-->' };
+    session = new Session({ store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    const msgs: string[] = [];
+    session.broadcaster.subscribe((ev, d) => { if (ev === 'chat-message') msgs.push((d as { text: string }).text); });
+    await session.tidyDoc();
+    expect(msgs).toContain('Merge Login and Sign-in into one section?'); // surfaced in chat
+  });
+
   it('curate applies an instruction and broadcasts', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     const reader = new FakeReader({ excerpt: '', advanced: {} });

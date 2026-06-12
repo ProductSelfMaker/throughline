@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTidyPrompt } from './tidy-prompt';
+import { buildTidyPrompt, extractConfirms } from './tidy-prompt';
 
 describe('buildTidyPrompt', () => {
   it('asks for a restructure-only pass that keeps the spine and the language', () => {
@@ -14,5 +14,21 @@ describe('buildTidyPrompt', () => {
 
   it('preserves existing Sources citation lines', () => {
     expect(buildTidyPrompt('## X\n**Sources:** `a.ts`\n')).toMatch(/preserve.*Sources/i);
+  });
+
+  it('asks for a CONFIRM block of ambiguities to confirm in chat', () => {
+    expect(buildTidyPrompt('## X\n')).toContain('CONFIRM');
+  });
+});
+
+describe('extractConfirms', () => {
+  it('splits the doc from a trailing CONFIRM block', () => {
+    const { md, confirms } = extractConfirms('## Overview\nTidied.\n<!--CONFIRM ["Are A and B the same feature?","Where does X belong?"] CONFIRM-->');
+    expect(md).toBe('## Overview\nTidied.');
+    expect(confirms).toEqual(['Are A and B the same feature?', 'Where does X belong?']);
+  });
+  it('returns [] when absent or malformed', () => {
+    expect(extractConfirms('## Overview\nTidied.')).toEqual({ md: '## Overview\nTidied.', confirms: [] });
+    expect(extractConfirms('d\n<!--CONFIRM nope CONFIRM-->').confirms).toEqual([]);
   });
 });

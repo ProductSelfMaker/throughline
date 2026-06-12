@@ -12,7 +12,8 @@ import { Broadcaster } from './broadcaster';
 import { buildFlowPrompt } from '../domain/flow-prompt';
 import { buildSyncPrompt } from '../domain/sync-prompt';
 import { buildCuratePrompt } from '../domain/curate-prompt';
-import { buildTidyPrompt } from '../domain/tidy-prompt';
+import { buildTidyPrompt, extractConfirms } from '../domain/tidy-prompt';
+import { buildChatPrompt, extractDocEdit, type ChatMessage } from '../domain/chat-prompt';
 import { buildDecisionsExtractPrompt, parseDecisions } from '../domain/decisions-prompt';
 import { buildMockupPrompt } from '../domain/mockup-prompt';
 import { assembleMockupHtml } from '../domain/mockup-html';
@@ -496,6 +497,22 @@ export class Session {
     });
   }
 
+  /** Conversational scribe: reply to the chat, and edit the doc only when the user clearly
+   *  asks for a change (an ambiguous request gets a clarifying question; a plain question gets
+   *  an answer). The doc, when edited, updates via the spec-updated broadcast. */
+  async chat(messages: ChatMessage[]): Promise<{ reply: string }> {
+    return this.runBusy(async () => {
+      const current = await this.store.read();
+      const diff = await this.gitDiff(this.cwd);
+      const { reply, doc } = extractDocEdit(await this.runner.complete(buildChatPrompt(messages, current, diff)));
+      if (doc) {
+        const applied = await applySpecUpdate(this.store, doc, current);
+        if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+      }
+      return { reply: reply || 'Done.' };
+    });
+  }
+
   /** Reorganize the *current* doc in place (a refactor pass): merge duplicates, group
    *  per-feature content, reorder, tighten — losing nothing. Operates on the doc text only
    *  (no code scan), so it is cheap. Nothing is written unless a valid doc comes back, and
@@ -503,10 +520,15 @@ export class Session {
   async tidyDoc(): Promise<void> {
     await this.runBusy(async () => {
       const current = await this.store.read();
-      const raw = await this.runner.complete(buildTidyPrompt(current));
-      const applied = await applySpecUpdate(this.store, raw, current);
+      const { md, confirms } = extractConfirms(await this.runner.complete(buildTidyPrompt(current)));
+      const applied = await applySpecUpdate(this.store, md, current);
       if (!applied.ok) throw new Error('tidy produced an empty document');
       this.broadcaster.broadcast('spec-updated', applied.result);
+      // ambiguities Tidy didn't decide → ask in the Scribe chat (non-blocking follow-ups)
+      if (confirms.length) {
+        this.broadcaster.broadcast('chat-message', { role: 'assistant', text: 'I reorganized the document. A couple of things to confirm:' });
+        for (const q of confirms) this.broadcaster.broadcast('chat-message', { role: 'assistant', text: q });
+      }
     });
   }
 

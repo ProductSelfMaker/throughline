@@ -37,18 +37,46 @@ export async function fetchAnalytics(): Promise<AnalyticsResponse> {
   return res.json();
 }
 
+// ── One shared SSE connection ──────────────────────────────────────────────
+// All subscriptions multiplex over a single EventSource. Opening one per
+// subscription hit the browser's 6-connections-per-origin cap (HTTP/1.1): with
+// the long-lived SSE streams saturating the pool, later POSTs (e.g. a Rebuild)
+// would queue forever. A single shared stream removes that ceiling.
+//
+// Snapshot events the server sends once on connect (spec-updated, status, jobs)
+// are cached and replayed to subscribers that attach after the initial burst, so
+// late mounters still get the current state. Delta events (job-updated,
+// chat-message, decisions-updated, workspace-changed) are never replayed.
+const REPLAY = new Set(['spec-updated', 'status', 'jobs']);
+let _es: EventSource | null = null;
+const _subs = new Map<string, Set<(d: unknown) => void>>();
+const _last = new Map<string, unknown>();
+
+function on(event: string, cb: (d: unknown) => void): () => void {
+  if (!_es) _es = new EventSource('/api/events');
+  let set = _subs.get(event);
+  if (!set) {
+    set = new Set();
+    _subs.set(event, set);
+    _es.addEventListener(event, (e) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      if (REPLAY.has(event)) _last.set(event, data);
+      _subs.get(event)!.forEach((fn) => fn(data));
+    });
+  }
+  set.add(cb);
+  if (REPLAY.has(event) && _last.has(event)) cb(_last.get(event)); // replay snapshot to late subscribers
+  return () => set!.delete(cb);
+}
+
 /** Subscribe to live PRD updates over SSE. */
 export function subscribeSpec(onSpec: (u: SpecUpdate) => void): () => void {
-  const es = new EventSource('/api/events');
-  es.addEventListener('spec-updated', (e) => onSpec(JSON.parse((e as MessageEvent).data)));
-  return () => es.close();
+  return on('spec-updated', (d) => onSpec(d as SpecUpdate));
 }
 
 /** Subscribe to the "AI is working" status (SSE 'status'). */
 export function subscribeStatus(onStatus: (working: boolean) => void): () => void {
-  const es = new EventSource('/api/events');
-  es.addEventListener('status', (e) => onStatus(!!JSON.parse((e as MessageEvent).data).working));
-  return () => es.close();
+  return on('status', (d) => onStatus(!!(d as { working?: boolean }).working));
 }
 
 /** Send a curation instruction to the scribe (it edits the PRD; changes arrive via SSE). */
@@ -59,6 +87,31 @@ export async function curate(instruction: string): Promise<void> {
     body: JSON.stringify({ instruction }),
   });
   if (!res.ok) throw new Error(`curate failed (${res.status})`);
+}
+
+/** One turn of the scribe conversation. */
+export type ChatMsg = { role: 'user' | 'assistant'; text: string };
+
+/** Send the whole thread to the conversational scribe; get its reply back. It may also
+ *  edit the document (changes arrive via SSE 'spec-updated'). */
+export async function chat(messages: ChatMsg[]): Promise<string> {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  });
+  if (!res.ok) throw new Error(`chat failed (${res.status})`);
+  const data = (await res.json()) as { reply?: string };
+  return data.reply ?? '';
+}
+
+/** Subscribe to assistant messages the server pushes into the chat (e.g. Tidy/Merge
+ *  confirmations) over SSE 'chat-message'. */
+export function subscribeChatMessage(onMessage: (text: string) => void): () => void {
+  return on('chat-message', (d) => {
+    const { text } = d as { text?: string };
+    if (text) onMessage(text);
+  });
 }
 
 /** A user-triggered rebuild that runs as a background job (survives navigation). */
@@ -79,13 +132,12 @@ export function subscribeJobs(
   onInitial: (running: JobKind[]) => void,
   onUpdate: (kind: JobKind, status: JobStatus) => void,
 ): () => void {
-  const es = new EventSource('/api/events');
-  es.addEventListener('jobs', (e) => onInitial((JSON.parse((e as MessageEvent).data).running ?? []) as JobKind[]));
-  es.addEventListener('job-updated', (e) => {
-    const d = JSON.parse((e as MessageEvent).data) as { kind: JobKind; status: JobStatus };
-    onUpdate(d.kind, d.status);
+  const offInitial = on('jobs', (d) => onInitial(((d as { running?: JobKind[] }).running ?? []) as JobKind[]));
+  const offUpdate = on('job-updated', (d) => {
+    const { kind, status } = d as { kind: JobKind; status: JobStatus };
+    onUpdate(kind, status);
   });
-  return () => es.close();
+  return () => { offInitial(); offUpdate(); };
 }
 
 /** The cached decisions ledger + whether a background refresh was started. */
@@ -98,9 +150,7 @@ export async function fetchDecisions(): Promise<{ items: DecisionItem[]; refresh
 
 /** Subscribe to background decisions-ledger updates (SSE 'decisions-updated'). */
 export function subscribeDecisions(onUpdate: (items: DecisionItem[]) => void): () => void {
-  const es = new EventSource('/api/events');
-  es.addEventListener('decisions-updated', (e) => onUpdate(JSON.parse((e as MessageEvent).data).items ?? []));
-  return () => es.close();
+  return on('decisions-updated', (d) => onUpdate((d as { items?: DecisionItem[] }).items ?? []));
 }
 
 /** The latest generated mockup HTML ('' if none). */
@@ -166,8 +216,6 @@ export async function applyUnified(): Promise<void> {
 }
 /** Subscribe to active-workspace changes (SSE 'workspace-changed'). */
 export function subscribeWorkspace(onChange: (active: WorkspaceInfo) => void): () => void {
-  const es = new EventSource('/api/events');
-  es.addEventListener('workspace-changed', (e) => onChange(JSON.parse((e as MessageEvent).data) as WorkspaceInfo));
-  return () => es.close();
+  return on('workspace-changed', (d) => onChange(d as WorkspaceInfo));
 }
 

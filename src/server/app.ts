@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { Session, isJobKind } from './session';
 import type { Broadcaster } from './broadcaster';
 import type { WorkspaceInfo, Unified } from './workspace-manager';
+import type { ChatMessage } from '../domain/chat-prompt';
 
 /** What the HTTP layer needs: the active workspace's Session + workspace management. */
 export interface AppHost {
@@ -68,6 +69,15 @@ export function createApp(host: AppHost): Hono {
     if (!instruction) return c.json({ error: 'empty instruction' }, 400);
     await s().curate(instruction);
     return c.json({ ok: true });
+  });
+
+  // conversational scribe chat: reply (+ edit the doc when clearly asked). Server may also push
+  // assistant messages over the 'chat-message' SSE event (e.g. Tidy confirmations).
+  app.post('/api/chat', async (c) => {
+    const body = await c.req.json<{ messages?: ChatMessage[] }>().catch(() => ({} as { messages?: ChatMessage[] }));
+    const messages = Array.isArray(body.messages) ? body.messages.filter((m) => m && m.text) : [];
+    if (!messages.length) return c.json({ error: 'messages required' }, 400);
+    return c.json(await s().chat(messages));
   });
 
   // Start a per-page rebuild (doc | decisions | mockup | architecture | tidy) as a background

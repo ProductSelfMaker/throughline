@@ -17,11 +17,30 @@ export function buildTidyPrompt(currentPrd: string): string {
     'PRESERVE any existing "**Sources:**" citation lines verbatim, keeping each with its section; do not add, change, or remove them.',
     'LANGUAGE: keep the two spine headings in English; write all other content in the same language the document already uses. Do not translate it.',
     '',
+    'CONFIRM: if reorganizing surfaces a genuine ambiguity you should NOT silently decide (e.g. two sections might be the same feature, or unclear where some content belongs), do the safe reorganization anyway but list that ambiguity as a short confirmation question for the user.',
+    '',
     'Current document:',
     '"""',
     currentPrd,
     '"""',
     '',
-    'Output the FULL reorganized document markdown only — no commentary, no code fences (```).',
+    'Output the FULL reorganized document markdown, then optionally one confirm block (and nothing else):',
+    '<!--CONFIRM ["<short question>", "<short question>"] CONFIRM-->',
+    'Omit the block if there is nothing to confirm. No commentary, no code fences (```).',
   ].join('\n');
+}
+
+const CONFIRM_RE = /<!--CONFIRM\s+([\s\S]*?)\s+CONFIRM-->/;
+
+/** Split the reorganized doc from an optional trailing CONFIRM block ([] when absent/malformed). */
+export function extractConfirms(raw: string): { md: string; confirms: string[] } {
+  const m = CONFIRM_RE.exec(raw);
+  if (!m) return { md: raw.trim(), confirms: [] };
+  const md = raw.replace(m[0], '').trim();
+  try {
+    const arr = JSON.parse(m[1]);
+    return { md, confirms: Array.isArray(arr) ? arr.filter((q): q is string => typeof q === 'string' && q.trim().length > 0) : [] };
+  } catch {
+    return { md, confirms: [] };
+  }
 }

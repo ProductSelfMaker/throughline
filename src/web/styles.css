@@ -209,6 +209,8 @@ body { margin: 0; background: #e9e6dd; }
 /* ===== floating scribe chat — collapsed FAB ===== */
 .tl-fab { position: absolute; right: 68px; bottom: 22px; width: 50px; height: 50px; border-radius: 50%; background: var(--solid); color: var(--on-solid); display: grid; place-items: center; border: none; box-shadow: 0 10px 24px -6px rgba(60,50,30,.42); cursor: pointer; z-index: 30; }
 .tl-fab svg { width: 22px; height: 22px; }
+/* unread dot — a question is waiting (server-pushed Tidy/Merge confirmation) */
+.tl-fab-dot { position: absolute; top: 9px; right: 9px; width: 11px; height: 11px; border-radius: 50%; background: #e0524d; border: 2px solid var(--panel); }
 
 /* ===== floating scribe chat — expanded (tall, multi-turn) ===== */
 .tl-fchat { position: absolute; right: 68px; bottom: 22px; width: 360px; height: 480px; max-height: 84%; background: var(--panel); border: 1px solid var(--border-2); border-radius: 16px; box-shadow: 0 16px 44px -10px rgba(60,50,30,.42), 0 2px 8px rgba(60,50,30,.14); display: flex; flex-direction: column; overflow: hidden; z-index: 30; }
@@ -222,7 +224,9 @@ body { margin: 0; background: #e9e6dd; }
 .tl-fmin:hover { background: var(--inset); }
 .tl-fthread { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .tl-fu { align-self: flex-end; max-width: 85%; background: var(--solid); color: var(--on-solid); border-radius: 13px 13px 4px 13px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
-.tl-fa { align-self: flex-start; max-width: 90%; background: var(--inset); color: var(--text-2); border-radius: 13px 13px 13px 4px; padding: 8px 12px; font-size: 12.5px; line-height: 1.55; }
+.tl-fa { align-self: flex-start; max-width: 90%; background: var(--inset); color: var(--text-2); border-radius: 13px 13px 13px 4px; padding: 8px 12px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; }
+.tl-fthinking { color: var(--text-3); animation: tl-pulse 1.2s ease-in-out infinite; }
+@keyframes tl-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 .tl-finput { margin: 0 12px 12px; border: 1px solid var(--border-2); border-radius: 13px; padding: 9px 9px 7px 13px; display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; }
 .tl-finput:focus-within { border-color: var(--text-3); }
 .tl-finput-ta { border: none; outline: none; resize: none; background: transparent; font: inherit; font-size: 13px; line-height: 1.5; color: var(--text); max-height: 140px; }
