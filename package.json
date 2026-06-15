@@ -1,11 +1,31 @@
 {
-  "name": "throughline",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@your-npm-username/throughline",
+  "version": "0.1.0",
+  "description": "An observer companion for Claude Code: reads your session logs + git diff and maintains a living product doc, decisions ledger, architecture, mockup, and token analytics.",
+  "license": "MIT",
+  "author": "ProductSelfMaker",
   "type": "module",
+  "keywords": [
+    "claude-code",
+    "claude",
+    "ai",
+    "prd",
+    "documentation",
+    "observer",
+    "living-docs",
+    "developer-tools"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "throughline": "bin/throughline.mjs"
   },
+  "files": [
+    "bin",
+    "dist",
+    "dist-server"
+  ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
@@ -14,7 +34,10 @@
     "dev:web": "vite",
     "dev": "concurrently -k -n server,web npm:dev:server npm:dev:web",
     "build:web": "vite build",
-    "start": "npm run build:web && tsx src/server/server.ts"
+    "build:server": "esbuild src/server/server.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-server/server.mjs",
+    "build": "npm run build:web && npm run build:server",
+    "start": "npm run build && node dist-server/server.mjs",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
@@ -22,12 +45,7 @@
     "chokidar": "^4.0.1",
     "diff": "^7.0.0",
     "hono": "^4.12.23",
-    "mermaid": "^11.15.0",
-    "open": "^11.0.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "open": "^11.0.0"
   },
   "devDependencies": {
     "@types/diff": "^7.0.0",
@@ -36,6 +54,12 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "concurrently": "^10.0.0",
+    "esbuild": "^0.28.1",
+    "mermaid": "^11.15.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vite": "^7.3.3",

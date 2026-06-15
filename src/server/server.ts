@@ -4,6 +4,20 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { existsSync, statSync, copyFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// Locate the package root by walking up from this file until a package.json is found.
+// Works in both layouts: dev (tsx runs src/server/server.ts) and the published bundle
+// (node runs dist-server/server.mjs) — the built web UI always lives at <root>/dist.
+function packageRoot(fromFile: string): string {
+  let d = dirname(fromFile);
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(join(d, 'package.json'))) return d;
+    const up = dirname(d);
+    if (up === d) break;
+    d = up;
+  }
+  return dirname(dirname(fromFile)); // fallback: assume <root>/<dir>/<file>
+}
 import open from 'open';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
@@ -13,9 +27,9 @@ import { Session } from './session';
 import { WorkspaceManager } from './workspace-manager';
 import { createApp } from './app';
 
-// Absolute path to the built web UI (repo-root/dist), resolved relative to THIS
+// Absolute path to the built web UI (<package-root>/dist), resolved relative to THIS
 // file — not the launch directory — so Throughline can be started from any project.
-const distDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist');
+const distDir = join(packageRoot(fileURLToPath(import.meta.url)), 'dist');
 
 // Target project directory: the first CLI arg if given, else the current dir.
 const cwd = process.argv[2] ? resolve(process.argv[2]) : process.cwd();
