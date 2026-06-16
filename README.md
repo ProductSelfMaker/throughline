@@ -36,14 +36,14 @@ Plus **Node.js >= 20** and a project that is a **git repository**.
 Run it against the project you're working on — no install required:
 
 ```bash
-npx @shawn_kr/throughline            # observe the current directory
-npx @shawn_kr/throughline ../my-app  # observe a specific project
+npx throughline-ai            # observe the current directory
+npx throughline-ai ../my-app  # observe a specific project
 ```
 
 Or install it globally:
 
 ```bash
-npm install -g @shawn_kr/throughline
+npm install -g throughline-ai
 throughline                                   # in your project directory
 ```
 
