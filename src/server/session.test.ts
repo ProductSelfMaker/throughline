@@ -63,6 +63,27 @@ describe('Session (observer)', () => {
     expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 42 });
   });
 
+  it('ingest applies a section patch — only the changed block, others preserved', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## Overview\nkeep me.\n\n## 로그인\nold body\n\n## Open Questions\n- q\n');
+    const ingest = new IngestStore(dir);
+    await ingest.save({ '/x/s1.jsonl': 1 });
+    const reader = new FakeReader({ excerpt: '사용자: 로그인 수정', advanced: { '/x/s1.jsonl': 42 } });
+    const runner = { complete: async () => '<<<REPLACE\n## 로그인\nNEW BODY\n>>>' }; // patch, not whole doc
+    session = new Session({ store, runner, reader, ingest, cwd: dir, gitDiff: async () => '' });
+    const updated = new Promise<ScribeResult>((res) =>
+      session!.broadcaster.subscribe((ev, d) => { if (ev === 'spec-updated') res(d as ScribeResult); }));
+
+    await session.init();
+    await updated;
+    const doc = await store.read();
+    expect(doc).toContain('NEW BODY');
+    expect(doc).not.toContain('old body');     // changed block replaced
+    expect(doc).toContain('keep me.');          // untouched block preserved verbatim
+    expect(doc).toContain('## Open Questions');  // spine preserved
+    expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 42 }); // checkpoint advanced
+  });
+
   it('rebuild builds the doc from a code scan (map → reduce) when source is present', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write('## 개요\n옛 내용\n');

@@ -12,6 +12,7 @@ import { Debouncer } from './debouncer';
 import { Broadcaster } from './broadcaster';
 import { buildFlowPrompt } from '../domain/flow-prompt';
 import { buildSyncPrompt } from '../domain/sync-prompt';
+import { parseDocPatch, applyDocPatch, looksLikeFullDoc } from '../domain/doc-patch';
 import { buildCuratePrompt } from '../domain/curate-prompt';
 import { buildTidyPrompt, extractConfirms } from '../domain/tidy-prompt';
 import { buildChatPrompt, extractDocEdit, type ChatMessage } from '../domain/chat-prompt';
@@ -503,11 +504,20 @@ export class Session {
         const current = await this.store.read();
         const diff = await this.gitDiff(this.cwd);
         const raw = await this.runner.complete(buildSyncPrompt(current, batch.excerpt, diff), CHEAP_OPTS);
-        const applied = await applySpecUpdate(this.store, raw, current);
-        if (applied.ok) {
-          this.checkpoint = { ...this.checkpoint, ...batch.advanced };
-          await this.ingest.save(this.checkpoint);
-          this.broadcaster.broadcast('spec-updated', applied.result);
+        if (!raw.trim()) return; // empty reply → keep the doc, retry this activity next time
+
+        // The scribe returns a section patch (changed blocks only), not the whole doc. Apply it
+        // deterministically; fall back to whole-doc replace if a non-compliant model returns one.
+        const ops = parseDocPatch(raw);
+        const nextDoc = ops.length ? applyDocPatch(current, ops) : looksLikeFullDoc(raw) ? raw : current;
+
+        // Activity consumed → advance the checkpoint even when nothing changed (don't reprocess).
+        this.checkpoint = { ...this.checkpoint, ...batch.advanced };
+        await this.ingest.save(this.checkpoint);
+
+        if (nextDoc !== current) {
+          const applied = await applySpecUpdate(this.store, nextDoc, current);
+          if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
         }
       } catch {
         // best-effort; keep the last good PRD and retry the activity next time
@@ -685,7 +695,9 @@ export class Session {
       if (!activityExcerpt.trim()) return DEFAULT_SPEC;
       const diff = await this.gitDiff(this.cwd);
       const raw = await this.runner.complete(buildSyncPrompt(DEFAULT_SPEC, activityExcerpt, diff), CHEAP_OPTS);
-      return raw.trim() ? raw : DEFAULT_SPEC;
+      if (!raw.trim()) return DEFAULT_SPEC;
+      const ops = parseDocPatch(raw);
+      return ops.length ? applyDocPatch(DEFAULT_SPEC, ops) : looksLikeFullDoc(raw) ? raw : DEFAULT_SPEC;
     }
 
     const realPaths = files.map((f) => f.path);
