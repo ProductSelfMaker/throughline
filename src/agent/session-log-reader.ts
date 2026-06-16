@@ -121,11 +121,15 @@ export class SessionLogReader implements ActivityReader {
     this.maxExcerptChars = opts.maxExcerptChars ?? DEFAULT_MAX_EXCERPT_CHARS;
   }
 
-  private async sessionFiles(): Promise<string[]> {
+  // Claude Code logs sub-agent / Agent-SDK turns as `agent-*.jsonl` alongside the top-level
+  // UUID session files. Top-level reading (ingest, offsets, work-items) wants only the real
+  // session, so agents are excluded by default. Token analytics, however, must include them —
+  // they carry the bulk of Agent-SDK usage (see analyze()).
+  private async sessionFiles(opts: { includeAgents?: boolean } = {}): Promise<string[]> {
     if (!existsSync(this.dir)) return [];
     const names = await readdir(this.dir);
     return names
-      .filter((n) => n.endsWith('.jsonl') && !n.startsWith('agent-'))
+      .filter((n) => n.endsWith('.jsonl') && (opts.includeAgents || !n.startsWith('agent-')))
       .map((n) => join(this.dir, n));
   }
 
@@ -230,7 +234,9 @@ export class SessionLogReader implements ActivityReader {
   async analyze(days: number, maxBytes: number): Promise<Analytics> {
     const cutoff = Date.now() - days * 86_400_000;
     const recent: { file: string; size: number; mtime: number }[] = [];
-    for (const file of await this.sessionFiles()) {
+    // Token totals span ALL logs (including agent-* sub-turns, which hold the bulk of
+    // Agent-SDK usage); history rows below stay top-level only.
+    for (const file of await this.sessionFiles({ includeAgents: true })) {
       try {
         const s = await stat(file);
         if (s.mtimeMs >= cutoff) recent.push({ file, size: s.size, mtime: s.mtimeMs });
@@ -280,14 +286,18 @@ export class SessionLogReader implements ActivityReader {
       } finally {
         rl.close();
       }
-      history.push({
-        id: basename(file).replace(/\.jsonl$/, '').slice(0, 8),
-        title: title || '(제목 없음)',
-        time: mtime,
-        messages,
-        tools,
-        tokens,
-      });
+      // History lists user-facing sessions; agent-* are sub-turns (their tokens are already
+      // in the aggregate above), so don't surface them as separate session rows.
+      if (!basename(file).startsWith('agent-')) {
+        history.push({
+          id: basename(file).replace(/\.jsonl$/, '').slice(0, 8),
+          title: title || '(제목 없음)',
+          time: mtime,
+          messages,
+          tools,
+          tokens,
+        });
+      }
     }
 
     const perDayArr = [...perDay.entries()]

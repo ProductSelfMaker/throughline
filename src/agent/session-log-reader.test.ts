@@ -111,7 +111,7 @@ describe('SessionLogReader.readRecent', () => {
 });
 
 describe('SessionLogReader.analyze', () => {
-  it('aggregates tokens + per-session history, excluding agent-*', async () => {
+  it('aggregates tokens across ALL logs (incl. agent-*) but lists only top-level sessions in history', async () => {
     const asst = (text: string, usage: object, tool?: { name: string; input: unknown }) =>
       JSON.stringify({ type: 'assistant', timestamp: '2026-06-02T00:00:00.000Z', message: { role: 'assistant', usage, content: [
         ...(text ? [{ type: 'text', text }] : []),
@@ -120,14 +120,17 @@ describe('SessionLogReader.analyze', () => {
     await writeFile(join(sessionDir, 's1.jsonl'),
       userLine('로그인 만들어') +
       asst('했어요', { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 5, cache_creation_input_tokens: 2 }, { name: 'Write', input: { file_path: 'a.tsx' } }));
-    await writeFile(join(sessionDir, 'agent-z.jsonl'), userLine('서브'));
+    // an agent-* sub-turn WITH usage — Agent-SDK work lands here. Its tokens must count toward
+    // the total, but it must NOT appear as a separate history session.
+    await writeFile(join(sessionDir, 'agent-z.jsonl'),
+      asst('sub', { input_tokens: 1000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }));
 
     const a = await new SessionLogReader({ cwd: CWD, home }).analyze(365, 64 * 1024 * 1024);
-    expect(a.tokens.total).toBe(127);
-    expect(a.tokens.input).toBe(100);
-    expect(a.tokens.turns).toBe(1);
-    expect(a.tokens.tools).toBe(1);
-    expect(a.history).toHaveLength(1); // agent-* excluded
+    expect(a.tokens.total).toBe(127 + 1000); // agent-* tokens now included (the meter fix)
+    expect(a.tokens.input).toBe(1100);
+    expect(a.tokens.turns).toBe(2);          // both assistant turns counted
+    expect(a.tokens.tools).toBe(1);          // tool_use only in the top-level session
+    expect(a.history).toHaveLength(1);        // agent-* is not a history row
     expect(a.history[0]).toMatchObject({ title: '로그인 만들어', messages: 2, tools: 1, tokens: 127 });
   });
 });
