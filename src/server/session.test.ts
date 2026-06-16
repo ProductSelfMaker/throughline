@@ -94,6 +94,40 @@ describe('Session (observer)', () => {
     expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 5 }); // checkpoint reset to "now"
   });
 
+  it('incremental rebuild: unchanged files re-map nothing (cached); a changed file re-maps', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## 개요\n옛 내용\n');
+    const mk = (count: { n: number }) => ({
+      complete: async (prompt: string) => {
+        if (prompt.includes('product analyst')) { count.n += 1; return '- a behavior'; }
+        return DOC;
+      },
+    });
+    const reader = () => new FakeReader({ excerpt: '', advanced: {} });
+    const file = (content: string) => async () => ({ files: [{ path: 'src/App.tsx', content }], truncated: false });
+
+    // cold: maps the one chunk
+    const c1 = { n: 0 };
+    session = new Session({ store, runner: mk(c1), reader: reader(), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '', projectCode: file('<button>저장</button>') });
+    await session.rebuild();
+    expect(c1.n).toBe(1);
+    session.stop();
+
+    // warm: identical file → cache hit → zero map calls
+    const c2 = { n: 0 };
+    const warm = new Session({ store, runner: mk(c2), reader: reader(), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '', projectCode: file('<button>저장</button>') });
+    await warm.rebuild();
+    expect(c2.n).toBe(0); // nothing re-mapped
+    warm.stop();
+
+    // changed: different content → cache miss → re-map
+    const c3 = { n: 0 };
+    const changed = new Session({ store, runner: mk(c3), reader: reader(), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '', projectCode: file('<button>변경됨</button>') });
+    await changed.rebuild();
+    expect(c3.n).toBe(1); // changed content re-mapped
+    changed.stop();
+  });
+
   it('rebuild falls back to activity-based regeneration when there is no source', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     await store.write('## 개요\n옛 내용\n');

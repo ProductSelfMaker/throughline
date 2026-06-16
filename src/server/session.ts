@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { ActivityReader, Analytics, CompleteOpts, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem, Freshness } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
@@ -18,7 +19,7 @@ import { buildDecisionsExtractPrompt, parseDecisions } from '../domain/decisions
 import { buildMockupPrompt } from '../domain/mockup-prompt';
 import { assembleMockupHtml } from '../domain/mockup-html';
 import { collectUiSource, UiSource } from '../agent/project-ui-source';
-import { collectProjectFiles, chunkByBudget, ProjectCode } from '../agent/project-code';
+import { collectProjectFiles, chunkByBudget, ProjectCode, CodeChunk } from '../agent/project-code';
 import { buildCodeMapPrompt, buildReduceMergePrompt, buildProductDocPrompt, DocContext } from '../domain/product-doc-prompt';
 import { buildArchMapPrompt, buildArchMergePrompt, buildArchDocPrompt, ArchContext } from '../domain/architecture-prompt';
 import { validateCitations, staleSections } from '../domain/source-citations';
@@ -169,6 +170,8 @@ export class Session {
   private architecturePath: string;
   private architectureMetaPath: string;
   private prdMetaPath: string;
+  private docMapCachePath: string;
+  private archMapCachePath: string;
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
 
@@ -206,6 +209,8 @@ export class Session {
     this.architecturePath = join(adir, 'architecture.md');
     this.architectureMetaPath = join(adir, 'architecture-meta.json');
     this.prdMetaPath = join(adir, 'prd-meta.json');
+    this.docMapCachePath = join(adir, 'doc-map-cache.json');
+    this.archMapCachePath = join(adir, 'arch-map-cache.json');
   }
 
   /** The developer-facing architecture doc ('' if not generated yet). */
@@ -639,6 +644,37 @@ export class Session {
     });
   }
 
+  /** Map chunks → per-chunk summaries, reusing cached summaries for chunks whose content is
+   *  unchanged (content-addressed by the chunk text). Only new/changed chunks reach the model;
+   *  the cache is rewritten to exactly the current chunk set (stale entries pruned). This makes
+   *  a Rebuild after a small edit re-map a couple of chunks instead of the whole codebase.
+   *  `onErr` observes the last map failure so a caller can surface an all-failed rebuild rather
+   *  than silently emptying the doc. Content-addressed ⇒ a reused summary is never stale. */
+  private async mapChunksCached(
+    chunks: CodeChunk[],
+    cachePath: string,
+    buildPrompt: (label: string, text: string, files: string[]) => string,
+    onErr?: (e: unknown) => void,
+  ): Promise<string[]> {
+    let cache: Record<string, string> = {};
+    try {
+      const parsed = JSON.parse(await readFile(cachePath, 'utf8'));
+      if (parsed && typeof parsed === 'object') cache = parsed;
+    } catch { /* no/invalid cache → cold rebuild */ }
+    const next: Record<string, string> = {};
+    const out = await pool(chunks, MAP_CONCURRENCY, async (c) => {
+      const key = createHash('sha1').update(c.text).digest('hex');
+      const hit = cache[key];
+      if (hit) { next[key] = hit; return hit; }
+      const s = (await this.runner.complete(buildPrompt(c.label, c.text, c.files), CHEAP_OPTS)
+        .catch((e) => { onErr?.(e); return ''; })).trim();
+      if (s) next[key] = s;
+      return s;
+    });
+    await writeFile(cachePath, JSON.stringify(next)).catch(() => {});
+    return out.filter((s) => s.trim());
+  }
+
   /** Deep, code-grounded product doc. Reads the whole project (bounded), extracts
    *  user-facing behavior per chunk (map), collapses to fit (merge), then synthesizes
    *  the detailed doc (reduce). Falls back to activity-based when there's no source. */
@@ -654,9 +690,7 @@ export class Session {
 
     const realPaths = files.map((f) => f.path);
     const chunks = chunkByBudget(files, MAP_CHUNK_BUDGET);
-    const maps = (await pool(chunks, MAP_CONCURRENCY, (c) =>
-      this.runner.complete(buildCodeMapPrompt(c.label, c.text, c.files), CHEAP_OPTS).catch(() => ''),
-    )).filter((s) => s.trim());
+    const maps = await this.mapChunksCached(chunks, this.docMapCachePath, buildCodeMapPrompt);
 
     const ctx: DocContext = {
       manifest: files.find((f) => /(^|\/)package\.json$/i.test(f.path))?.content,
@@ -723,9 +757,7 @@ export class Session {
 
     const chunks = chunkByBudget(files, MAP_CHUNK_BUDGET);
     let mapErr: unknown;
-    const maps = (await pool(chunks, MAP_CONCURRENCY, (c) =>
-      this.runner.complete(buildArchMapPrompt(c.label, c.text, c.files), CHEAP_OPTS).catch((e) => { mapErr = e; return ''; }),
-    )).filter((s) => s.trim());
+    const maps = await this.mapChunksCached(chunks, this.archMapCachePath, buildArchMapPrompt, (e) => { mapErr = e; });
     if (maps.length === 0) {
       if (mapErr) throw mapErr; // all map calls failed (e.g. overload) → surface, don't silently no-op
       return '';                // genuinely no architecture extracted
