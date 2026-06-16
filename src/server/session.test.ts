@@ -206,6 +206,51 @@ describe('Session (observer)', () => {
     expect(msgs).toContain('Merge Login and Sign-in into one section?'); // surfaced in chat
   });
 
+  it('Live paused: observed activity is not auto-ingested (no token use); resuming catches up', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    const ingest = new IngestStore(dir);
+    await ingest.save({ '/x/s1.jsonl': 1 });
+    const reader = new FakeReader({ excerpt: '사용자: 활동', advanced: { '/x/s1.jsonl': 42 } });
+    const calls: Array<{ model?: string } | undefined> = [];
+    const runner = { complete: async (_p: string, o?: { model?: string }) => { calls.push(o); return DOC; } };
+    session = new Session({ store, runner, reader, ingest, cwd: dir, gitDiff: async () => '', debounceMs: 5 });
+
+    session.setLive(false);
+    session.notifyActivity();
+    await new Promise((r) => setTimeout(r, 40));
+    expect(calls.length).toBe(0); // paused → nothing ingested
+
+    session.setLive(true); // resuming triggers a catch-up ingest
+    await new Promise((r) => setTimeout(r, 40));
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0]?.model).toBe('haiku'); // continuous sync runs on the cheap tier
+  });
+
+  it('setLive broadcasts live-changed once per change; isLive reflects state', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    session = new Session({ store, runner: completer(DOC), reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    const events: Array<{ live: boolean }> = [];
+    session.broadcaster.subscribe((ev, d) => { if (ev === 'live-changed') events.push(d as { live: boolean }); });
+    expect(session.isLive()).toBe(true);
+    session.setLive(false);
+    expect(session.isLive()).toBe(false);
+    session.setLive(false); // no-op
+    expect(events).toEqual([{ live: false }]); // exactly one broadcast
+  });
+
+  it('cost tiering: flow uses the cheap model, chat uses the default', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write(DOC);
+    const calls: Array<{ model?: string } | undefined> = [];
+    const runner = { complete: async (_p: string, o?: { model?: string }) => { calls.push(o); return 'flowchart TD\n A-->B'; } };
+    session = new Session({ store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    await session.generateFlow();
+    expect(calls.at(-1)?.model).toBe('haiku');
+    calls.length = 0;
+    await session.chat([{ role: 'user', text: 'hi' }]);
+    expect(calls.at(-1)?.model).toBeUndefined(); // strong/default tier
+  });
+
   it('curate applies an instruction and broadcasts', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     const reader = new FakeReader({ excerpt: '', advanced: {} });

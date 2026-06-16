@@ -84,6 +84,17 @@ describe('POST /api/chat', () => {
   });
 });
 
+describe('POST /api/live', () => {
+  it('400s on a non-boolean; toggles continuous ingest and returns the state', async () => {
+    session = mk();
+    const app = createApp(host(session));
+    expect((await app.request('/api/live', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) })).status).toBe(400);
+    const res = await app.request('/api/live', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on: false }) });
+    expect(await res.json()).toEqual({ live: false });
+    expect(session.isLive()).toBe(false);
+  });
+});
+
 describe('POST /api/jobs/:kind', () => {
   it('starts a job, reports it running, then clears it on completion', async () => {
     const PRD = `## 📌 개요\nX\n\n## 🎯 목표\n- a\n\n## ✅ 기능 요구사항\n- [ ] b\n\n## ❓ 미해결 질문\n- c\n`;

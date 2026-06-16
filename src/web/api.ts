@@ -47,7 +47,7 @@ export async function fetchAnalytics(): Promise<AnalyticsResponse> {
 // are cached and replayed to subscribers that attach after the initial burst, so
 // late mounters still get the current state. Delta events (job-updated,
 // chat-message, decisions-updated, workspace-changed) are never replayed.
-const REPLAY = new Set(['spec-updated', 'status', 'jobs']);
+const REPLAY = new Set(['spec-updated', 'status', 'jobs', 'live-changed']);
 let _es: EventSource | null = null;
 const _subs = new Map<string, Set<(d: unknown) => void>>();
 const _last = new Map<string, unknown>();
@@ -217,5 +217,13 @@ export async function applyUnified(): Promise<void> {
 /** Subscribe to active-workspace changes (SSE 'workspace-changed'). */
 export function subscribeWorkspace(onChange: (active: WorkspaceInfo) => void): () => void {
   return on('workspace-changed', (d) => onChange(d as WorkspaceInfo));
+}
+
+/** Continuous-ingest ("Live") state. When off, leaving Throughline open costs no tokens. */
+export function subscribeLive(onChange: (live: boolean) => void): () => void {
+  return on('live-changed', (d) => onChange(!!(d as { live?: boolean }).live));
+}
+export async function setLive(on: boolean): Promise<void> {
+  await fetch('/api/live', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on }) });
 }
 

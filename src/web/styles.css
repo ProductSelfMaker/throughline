@@ -242,6 +242,16 @@ body { margin: 0; background: #e9e6dd; }
 .tl-stale-banner code { font-family: var(--font-mono); font-size: 12px; background: rgba(122,90,22,.12); padding: 1px 5px; border-radius: 4px; }
 .tl-stale-banner b { font-weight: 650; }
 
+/* Live (continuous ingest) toggle — top bar. On = updating as you work (tokens); Paused = idle. */
+.tl-live { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--inset); font: inherit; font-size: 12.5px; cursor: pointer; }
+.tl-live:hover { background: var(--inset-2); }
+.tl-live-dot { width: 7px; height: 7px; border-radius: 50%; }
+.tl-live.on { color: #1f7a44; }
+.tl-live.on .tl-live-dot { background: #2bbb6a; box-shadow: 0 0 0 3px rgba(43,187,106,.18); animation: tl-livepulse 1.8s ease-in-out infinite; }
+.tl-live.off { color: var(--text-3); }
+.tl-live.off .tl-live-dot { background: var(--text-3); }
+@keyframes tl-livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
 /* Workspace switcher (top bar) */
 .tl-ws { position: relative; }
 .tl-ws-btn { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--inset); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }

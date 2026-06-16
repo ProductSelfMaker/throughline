@@ -80,6 +80,15 @@ export function createApp(host: AppHost): Hono {
     return c.json(await s().chat(messages));
   });
 
+  // Live (continuous ingest) on/off. When off, observed activity is not auto-ingested, so
+  // leaving Throughline open while coding costs no tokens. State streams via 'live-changed'.
+  app.post('/api/live', async (c) => {
+    const body = await c.req.json<{ on?: boolean }>().catch(() => ({} as { on?: boolean }));
+    if (typeof body.on !== 'boolean') return c.json({ error: 'on (boolean) required' }, 400);
+    s().setLive(body.on);
+    return c.json({ live: s().isLive() });
+  });
+
   // Start a per-page rebuild (doc | decisions | mockup | architecture | tidy) as a background
   // job — runs detached; progress arrives via the 'job-updated' SSE event.
   app.post('/api/jobs/:kind', (c) => {
@@ -130,6 +139,7 @@ export function createApp(host: AppHost): Hono {
       await stream.writeSSE({ event: 'status', data: JSON.stringify({ working: s().isWorking() }) });
       await stream.writeSSE({ event: 'jobs', data: JSON.stringify({ running: s().runningJobs() }) });
       await stream.writeSSE({ event: 'workspace-changed', data: JSON.stringify(host.activeInfo()) });
+      await stream.writeSSE({ event: 'live-changed', data: JSON.stringify({ live: s().isLive() }) });
       const unsub = host.broadcaster.subscribe((event, data) => {
         // never let a write to a closed stream become an unhandled rejection (crashes Node)
         stream.writeSSE({ event, data: JSON.stringify(data) }).catch(() => {});

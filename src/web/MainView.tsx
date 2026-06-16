@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fetchMockup, fetchArchitecture, fetchDocFreshness, fetchInfo, subscribeStatus, fetchWorkspaces, createWorkspace, selectWorkspace, type AnalyticsResponse, type JobKind, type Freshness, type WorkspaceInfo } from './api';
+import { fetchMockup, fetchArchitecture, fetchDocFreshness, fetchInfo, subscribeStatus, subscribeLive, setLive, fetchWorkspaces, createWorkspace, selectWorkspace, type AnalyticsResponse, type JobKind, type Freshness, type WorkspaceInfo } from './api';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { MergeView } from './MergeView';
 import { HistoryView } from './HistoryView';
@@ -85,6 +85,7 @@ export function MainView({
   const [docFresh, setDocFresh] = useState<Freshness | null>(null);
   const [info, setInfo] = useState<{ cwd: string; display: string } | null>(null);
   const [working, setWorking] = useState(false);
+  const [liveOn, setLiveOn] = useState(true);
 
   const rebuildKind = REBUILD_KIND[activeView];
   const rebuilding = rebuildKind ? running.has(rebuildKind) : false;
@@ -98,7 +99,8 @@ export function MainView({
     let alive = true;
     fetchInfo().then((i) => { if (alive) setInfo(i); }).catch(() => {});
     const unsub = subscribeStatus((w) => { if (alive) setWorking(w); });
-    return () => { alive = false; unsub(); };
+    const unsubLive = subscribeLive((v) => { if (alive) setLiveOn(v); });
+    return () => { alive = false; unsub(); unsubLive(); };
   }, []);
 
   // (Re)load the mockup when entering the page and whenever a mockup job completes.
@@ -134,6 +136,16 @@ export function MainView({
         <WorkspaceSwitcher onActive={setActiveWs} />
         {info?.display ? <span className="tl-cwd" title={info.cwd}>{shortenPath(info.display)}</span> : null}
         {working ? <span className="tl-working"><span className="dot" />Working…</span> : null}
+        <button
+          className={`tl-live ${liveOn ? 'on' : 'off'}`}
+          type="button"
+          onClick={() => setLive(!liveOn)}
+          title={liveOn
+            ? 'Live: the document updates automatically as you work (uses tokens). Click to pause.'
+            : 'Paused: no automatic updates while you code (no token use). Click to resume.'}
+        >
+          <span className="tl-live-dot" />{liveOn ? 'Live' : 'Paused'}
+        </button>
         <span className="sp" />
         {activeView === 'mockup' && codeGenAllowed ? (
           <button className="tl-gen" type="button" onClick={() => start('mockup')} disabled={mockupBusy}>

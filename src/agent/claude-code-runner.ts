@@ -1,6 +1,6 @@
 // src/agent/claude-code-runner.ts
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { AgentRunner, Message } from '../domain/types';
+import { AgentRunner, CompleteOpts, Message } from '../domain/types';
 import { buildScribePrompt } from '../domain/scribe-prompt';
 
 /** A transient, retryable provider error (HTTP 529 / "overloaded"). */
@@ -51,11 +51,23 @@ function classify(text: string): Error {
   return isOverloadError(text) ? new OverloadError(text) : new Error(text);
 }
 
-async function collect(prompt: string, cwd: string | undefined, signal?: AbortSignal): Promise<string> {
+async function collect(prompt: string, cwd: string | undefined, opts?: CompleteOpts): Promise<string> {
   let full = '';
   let resultErr = '';
   try {
-    for await (const msg of query({ prompt, options: { cwd, abortController: abortControllerFor(signal) } })) {
+    // These are single-shot text transforms, not agentic work: disable tools and cap at one
+    // turn so the model can't spend tokens reading files / running commands / looping. `model`
+    // lets callers pick a cheap tier (e.g. 'haiku') for bulk steps. settingSources: [] keeps
+    // SDK isolation (no CLAUDE.md / settings loaded).
+    const options = {
+      cwd,
+      abortController: abortControllerFor(opts?.signal),
+      model: opts?.model,
+      allowedTools: [] as string[],
+      maxTurns: 1,
+      settingSources: [] as [],
+    };
+    for await (const msg of query({ prompt, options })) {
       if (msg.type === 'assistant') {
         for (const block of msg.message.content) {
           if (block.type === 'text') full += block.text;
@@ -77,18 +89,18 @@ async function collect(prompt: string, cwd: string | undefined, signal?: AbortSi
 export class ClaudeCodeRunner implements AgentRunner {
   constructor(private options: { cwd?: string; retryAttempts?: number; sleep?: (ms: number) => Promise<void> } = {}) {}
 
-  private run(prompt: string, signal?: AbortSignal): Promise<string> {
+  private run(prompt: string, opts?: CompleteOpts): Promise<string> {
     return withOverloadRetry(
-      () => collect(prompt, this.options.cwd, signal).then(stripCodeFence),
+      () => collect(prompt, this.options.cwd, opts).then(stripCodeFence),
       { attempts: this.options.retryAttempts ?? 3, sleep: this.options.sleep },
     );
   }
 
   async scribe(currentSpecMarkdown: string, transcript: Message[], signal?: AbortSignal): Promise<string> {
-    return this.run(buildScribePrompt(currentSpecMarkdown, transcript), signal);
+    return this.run(buildScribePrompt(currentSpecMarkdown, transcript), { signal });
   }
 
-  async complete(prompt: string, signal?: AbortSignal): Promise<string> {
-    return this.run(prompt, signal);
+  async complete(prompt: string, opts?: CompleteOpts): Promise<string> {
+    return this.run(prompt, opts);
   }
 }

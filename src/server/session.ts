@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem, Freshness } from '../domain/types';
+import { ActivityReader, Analytics, CompleteOpts, DEFAULT_SPEC, WorkItem, WorkItemDetail, DecisionItem, Freshness } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
@@ -40,6 +40,12 @@ const REBUILD_MAX_CHARS = 40_000;
 const MAP_CHUNK_BUDGET = 120_000;   // chars of code per map call
 const REDUCE_BUDGET = 120_000;      // chars of summaries per merge/synthesis call
 const MAP_CONCURRENCY = 4;          // parallel map calls
+
+// Cost tiering: bulk/mechanical steps (per-chunk map, merge, continuous sync, flow, decisions
+// extraction) run on a cheap model; only the final synthesis + user-facing chat/curate/tidy/
+// mockup keep the default (stronger) model. Cuts the bulk of token spend with little quality loss.
+const CHEAP = 'haiku';
+const CHEAP_OPTS = { model: CHEAP } as const;
 
 /** Run `fn` over items with bounded concurrency, preserving order. */
 async function pool<T, R>(items: T[], limit: number, fn: (t: T, i: number) => Promise<R>): Promise<R[]> {
@@ -107,7 +113,7 @@ async function defaultGitChangedSince(cwd: string, commit: string): Promise<stri
 
 // Minimal runner surface this engine needs (one-shot completion only).
 interface Completer {
-  complete(prompt: string, signal?: AbortSignal): Promise<string>;
+  complete(prompt: string, opts?: CompleteOpts): Promise<string>;
 }
 
 export interface SessionDeps {
@@ -174,6 +180,10 @@ export class Session {
   private pendingActivity = false;
   private lastWorking = false;
 
+  // Continuous ingest ("Live"): when paused, observed activity is NOT auto-ingested, so leaving
+  // Throughline open while you code costs nothing. On by default; user-toggleable.
+  private live = true;
+
   constructor(deps: SessionDeps) {
     this.store = deps.store;
     this.runner = deps.runner;
@@ -182,7 +192,7 @@ export class Session {
     this.ingest = deps.ingest;
     this.cwd = deps.cwd;
     this.broadcaster = deps.broadcaster ?? new Broadcaster();
-    this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
+    this.debouncer = new Debouncer(deps.debounceMs ?? 30_000);
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
     this.gitHead = deps.gitHead ?? defaultGitHead;
     this.gitChangedSince = deps.gitChangedSince ?? defaultGitChangedSince;
@@ -342,7 +352,7 @@ export class Session {
       const advancedTo = (used.length ? used[used.length - 1] : fresh[fresh.length - 1]).time;
       if (!used.length) { await this.writeDecisionsState({ mark, ts: now, lastTime: advancedTo }); return; }
 
-      const raw = await this.runBusy(() => this.runner.complete(buildDecisionsExtractPrompt(parts.join('\n\n'), ledger.map((d) => d.what))));
+      const raw = await this.runBusy(() => this.runner.complete(buildDecisionsExtractPrompt(parts.join('\n\n'), ledger.map((d) => d.what)), CHEAP_OPTS));
       const seen = new Set(ledger.map((d) => normWhat(d.what)));
       for (const p of parseDecisions(raw)) {
         const what = p.what.trim();
@@ -385,11 +395,27 @@ export class Session {
     if (opts.watch ?? true) this.unwatch = this.reader.watch(() => this.notifyActivity());
   }
 
-  /** React to new observed activity: mark pending, reflect "working", and debounce an ingest. */
+  /** React to new observed activity: mark pending, reflect "working", and debounce an ingest.
+   *  When Live is paused, activity is ignored (no auto-ingest → no token spend). */
   notifyActivity(): void {
+    if (!this.live) return;
     this.pendingActivity = true;
     this.syncWorking();
     this.debouncer.schedule(() => { void this.ingestNow(); });
+  }
+
+  /** Whether continuous ingest is on. */
+  isLive(): boolean {
+    return this.live;
+  }
+
+  /** Turn continuous ingest on/off. Resuming ingests once to catch up on activity missed while
+   *  paused. Broadcasts 'live-changed' so the UI reflects the state. */
+  setLive(on: boolean): void {
+    if (on === this.live) return;
+    this.live = on;
+    this.broadcaster.broadcast('live-changed', { live: on });
+    if (on) this.notifyActivity(); // catch up on anything observed while paused
   }
 
   /** Start capturing from "now": advance the checkpoint to the current log offsets so prior
@@ -459,7 +485,7 @@ export class Session {
 
   async generateFlow(signal?: AbortSignal): Promise<string> {
     const spec = await this.readSpec();
-    return this.runner.complete(buildFlowPrompt(spec), signal);
+    return this.runner.complete(buildFlowPrompt(spec), { signal, model: CHEAP });
   }
 
   /** Fold new agent activity into the PRD. Advances the checkpoint only on success. */
@@ -471,7 +497,7 @@ export class Session {
         if (!batch.excerpt.trim()) return;
         const current = await this.store.read();
         const diff = await this.gitDiff(this.cwd);
-        const raw = await this.runner.complete(buildSyncPrompt(current, batch.excerpt, diff));
+        const raw = await this.runner.complete(buildSyncPrompt(current, batch.excerpt, diff), CHEAP_OPTS);
         const applied = await applySpecUpdate(this.store, raw, current);
         if (applied.ok) {
           this.checkpoint = { ...this.checkpoint, ...batch.advanced };
@@ -622,14 +648,14 @@ export class Session {
     if (files.length === 0) {
       if (!activityExcerpt.trim()) return DEFAULT_SPEC;
       const diff = await this.gitDiff(this.cwd);
-      const raw = await this.runner.complete(buildSyncPrompt(DEFAULT_SPEC, activityExcerpt, diff));
+      const raw = await this.runner.complete(buildSyncPrompt(DEFAULT_SPEC, activityExcerpt, diff), CHEAP_OPTS);
       return raw.trim() ? raw : DEFAULT_SPEC;
     }
 
     const realPaths = files.map((f) => f.path);
     const chunks = chunkByBudget(files, MAP_CHUNK_BUDGET);
     const maps = (await pool(chunks, MAP_CONCURRENCY, (c) =>
-      this.runner.complete(buildCodeMapPrompt(c.label, c.text, c.files)).catch(() => ''),
+      this.runner.complete(buildCodeMapPrompt(c.label, c.text, c.files), CHEAP_OPTS).catch(() => ''),
     )).filter((s) => s.trim());
 
     const ctx: DocContext = {
@@ -656,7 +682,7 @@ export class Session {
       if (batches.length >= level.length) break; // can't shrink further
       const merged: string[] = [];
       for (const b of batches) {
-        const m = (await this.runner.complete(buildReduceMergePrompt(b.join('\n\n'))).catch(() => '')).trim();
+        const m = (await this.runner.complete(buildReduceMergePrompt(b.join('\n\n')), CHEAP_OPTS).catch(() => '')).trim();
         if (m) merged.push(m);
       }
       if (merged.length === 0) break;
@@ -698,7 +724,7 @@ export class Session {
     const chunks = chunkByBudget(files, MAP_CHUNK_BUDGET);
     let mapErr: unknown;
     const maps = (await pool(chunks, MAP_CONCURRENCY, (c) =>
-      this.runner.complete(buildArchMapPrompt(c.label, c.text, c.files)).catch((e) => { mapErr = e; return ''; }),
+      this.runner.complete(buildArchMapPrompt(c.label, c.text, c.files), CHEAP_OPTS).catch((e) => { mapErr = e; return ''; }),
     )).filter((s) => s.trim());
     if (maps.length === 0) {
       if (mapErr) throw mapErr; // all map calls failed (e.g. overload) → surface, don't silently no-op
@@ -723,7 +749,7 @@ export class Session {
       if (batches.length >= level.length) break;
       const merged: string[] = [];
       for (const b of batches) {
-        const m = (await this.runner.complete(buildArchMergePrompt(b.join('\n\n'))).catch(() => '')).trim();
+        const m = (await this.runner.complete(buildArchMergePrompt(b.join('\n\n')), CHEAP_OPTS).catch(() => '')).trim();
         if (m) merged.push(m);
       }
       if (merged.length === 0) break;

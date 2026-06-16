@@ -126,8 +126,17 @@ export interface AgentRunner {
     transcript: Message[],
     signal?: AbortSignal,
   ): Promise<string>;
-  /** Generic one-shot completion for a prompt (sync, curation, flow). */
-  complete(prompt: string, signal?: AbortSignal): Promise<string>;
+  /** Generic one-shot completion for a prompt (sync, curation, flow).
+   *  `opts.model` selects a cheaper/stronger model per task (cost tiering); omit to inherit
+   *  the default. `opts.signal` aborts the call. */
+  complete(prompt: string, opts?: CompleteOpts): Promise<string>;
+}
+
+/** Per-call options for {@link AgentRunner.complete}. */
+export interface CompleteOpts {
+  /** Model alias or id (e.g. 'haiku'); omit to inherit the default model. */
+  model?: string;
+  signal?: AbortSignal;
 }
 
 /** The living PRODUCT doc — a user-facing explanation of the service, organized by
